@@ -15,19 +15,19 @@
   },
   "author": "David Marby <david@dmarby.se> http://dmarby.se",
   "dependencies": {
-    "async": "^2.6.2",
-    "bottleneck": "^2.17.1",
+    "async": "^3.2.2",
+    "bottleneck": "^2.19.5",
     "breeze": "^1.2.2",
-    "colors": "^1.3.3",
+    "colors": "^1.4.0",
     "commander": "^2.19.0",
-    "inquirer": "^6.2.2",
+    "inquirer": "^8.2.0",
     "mkdirp": "^1.0.4",
     "nasa-keypath": "0.0.1",
     "playwright": "^1.17.1",
-    "request": "^2.88.0",
-    "sanitize-filename": "^1.6.1"
+    "request": "^2.88.2",
+    "sanitize-filename": "^1.6.3"
   },
   "devDependencies": {
-    "standard": "^12.0.1"
+    "standard": "^16.0.4"
   }
 }
