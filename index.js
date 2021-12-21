@@ -3,7 +3,6 @@
 const async = require('async')
 const commander = require('commander')
 const packageInfo = require('./package.json')
-const Nightmare = require('nightmare')
 const request = require('request')
 const Breeze = require('breeze')
 const Bottleneck = require('bottleneck')
@@ -18,6 +17,7 @@ const path = require('path')
 const fs = require('fs')
 const os = require('os')
 const userAgent = util.format('Humblebundle-Ebook-Downloader/%s', packageInfo.version)
+const playwright = require('playwright')
 
 const SUPPORTED_FORMATS = ['epub', 'mobi', 'pdf', 'pdf_hd', 'cbz']
 const ALLOWED_FORMATS = SUPPORTED_FORMATS.concat(['all']).sort()
@@ -82,11 +82,11 @@ function validateSession (next, config) {
   let session = config.session
 
   if (!commander.authToken) {
-    if (!config.session || !config.expirationDate) {
+    if (!config.session || !config.expires) {
       return next()
     }
 
-    if (config.expirationDate < new Date()) {
+    if (config.expires < new Date()) {
       return next()
     }
   } else {
@@ -124,73 +124,39 @@ function debug () {
   }
 }
 
-function authenticate (next) {
+async function authenticate (next) {
   console.log('Authenticating...')
 
-  const nightmare = Nightmare({
-    show: true,
-    width: 800,
-    height: 600
-  })
+  try {
+    const browser = await playwright.chromium.launch({
+      headless: false
+    })
+    const context = await browser.newContext()
+    const page = await context.newPage()
 
-  nightmare.useragent(userAgent)
+    await page.goto('https://www.humblebundle.com/login?goto=%2Fhome%2Flibrary')
 
-  let handledRedirect = false
+    // We disable the default 30s timeout as 2FA would take longer than that
+    await page.waitForURL('https://www.humblebundle.com/home/library', { timeout: 0 })
 
-  function handleRedirect (targetUrl) {
-    if (handledRedirect) {
-      return
-    }
+    const cookies = await context.cookies()
+    const [sessionCookie] = cookies.filter(cookie => cookie.name === '_simpleauth_sess')
 
-    const parsedUrl = new URL(targetUrl)
+    await browser.close()
 
-    if (parsedUrl.hostname !== 'www.humblebundle.com' || parsedUrl.path.indexOf('/home/library') === -1) {
-      return
-    }
+    saveConfig({
+      session: sessionCookie.value,
+      expires: new Date(sessionCookie.expires * 1000)
+    }, (error) => {
+      if (error) {
+        return next(error)
+      }
 
-    debug('Handled redirect for url %s', targetUrl)
-    handledRedirect = true
-
-    nightmare
-      .cookies.get({
-        secure: true,
-        name: '_simpleauth_sess'
-      })
-      .then((sessionCookie) => {
-        if (!sessionCookie) {
-          return next(new Error('Could not get session cookie'))
-        }
-
-        nightmare._endNow()
-
-        saveConfig({
-          session: sessionCookie.value,
-          expirationDate: new Date(sessionCookie.expirationDate * 1000)
-        }, (error) => {
-          if (error) {
-            return next(error)
-          }
-
-          next(null, sessionCookie.value)
-        })
-      })
-      .catch((error) => next(error))
+      next(null, sessionCookie.value)
+    })
+  } catch (error) {
+    next(error)
   }
-
-  nightmare.on('did-get-redirect-request', (event, sourceUrl, targetUrl, isMainFrame, responseCode, requestMethod) => {
-    debug('did-get-redirect-request: %s %s', sourceUrl, targetUrl)
-    handleRedirect(targetUrl)
-  })
-
-  nightmare.on('will-navigate', (event, targetUrl) => {
-    debug('will-navigate: %s', targetUrl)
-    handleRedirect(targetUrl)
-  })
-
-  nightmare
-    .goto('https://www.humblebundle.com/login?goto=%2Fhome%2Flibrary')
-    .then()
-    .catch((error) => next(error))
 }
 
 function fetchOrders (next, session) {
