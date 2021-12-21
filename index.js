@@ -13,7 +13,6 @@ const inquirer = require('inquirer')
 const keypath = require('nasa-keypath')
 const mkdirp = require('mkdirp')
 const sanitizeFilename = require('sanitize-filename')
-const url = require('url')
 const util = require('util')
 const path = require('path')
 const fs = require('fs')
@@ -56,7 +55,7 @@ function loadConfig (next) {
       return next(error)
     }
 
-    var config
+    let config
 
     try {
       config = require(configPath)
@@ -70,17 +69,17 @@ function loadConfig (next) {
 
 function getRequestHeaders (session) {
   return {
-    'Accept': 'application/json',
+    Accept: 'application/json',
     'Accept-Charset': 'utf-8',
     'User-Agent': userAgent,
-    'Cookie': '_simpleauth_sess=' + session + ';'
+    Cookie: '_simpleauth_sess=' + session + ';'
   }
 }
 
 function validateSession (next, config) {
   console.log('Validating session...')
 
-  var session = config.session
+  let session = config.session
 
   if (!commander.authToken) {
     if (!config.session || !config.expirationDate) {
@@ -128,7 +127,7 @@ function debug () {
 function authenticate (next) {
   console.log('Authenticating...')
 
-  var nightmare = Nightmare({
+  const nightmare = Nightmare({
     show: true,
     width: 800,
     height: 600
@@ -136,14 +135,14 @@ function authenticate (next) {
 
   nightmare.useragent(userAgent)
 
-  var handledRedirect = false
+  let handledRedirect = false
 
   function handleRedirect (targetUrl) {
     if (handledRedirect) {
       return
     }
 
-    var parsedUrl = url.parse(targetUrl, true)
+    const parsedUrl = new URL(targetUrl)
 
     if (parsedUrl.hostname !== 'www.humblebundle.com' || parsedUrl.path.indexOf('/home/library') === -1) {
       return
@@ -210,10 +209,10 @@ function fetchOrders (next, session) {
       return next(new Error(util.format('Could not fetch orders, unknown error, status code:', response.statusCode)))
     }
 
-    var total = response.body.length
-    var done = 0
+    const total = response.body.length
+    let done = 0
 
-    var orderInfoLimiter = new Bottleneck({
+    const orderInfoLimiter = new Bottleneck({
       maxConcurrent: 5,
       minTime: 500
     })
@@ -242,7 +241,7 @@ function fetchOrders (next, session) {
         return next(error)
       }
 
-      var filteredOrders = orders.filter((order) => {
+      const filteredOrders = orders.filter((order) => {
         return flatten(keypath.get(order, 'subproducts.[].downloads.[].platform')).indexOf('ebook') !== -1
       })
 
@@ -252,14 +251,14 @@ function fetchOrders (next, session) {
 }
 
 function getWindowHeight () {
-  var windowSize = process.stdout.getWindowSize()
+  const windowSize = process.stdout.getWindowSize()
   return windowSize[windowSize.length - 1]
 }
 
 function displayOrders (next, orders) {
-  var options = []
+  const options = []
 
-  for (var order of orders) {
+  for (const order of orders) {
     options.push(order.product.human_name)
   }
 
@@ -339,13 +338,13 @@ function checkSignatureMatch (filePath, download, callback) {
       return callback(error)
     }
 
-    var hashType = download.sha1 ? 'sha1' : 'md5'
-    var hashToVerify = download[hashType]
+    const hashType = download.sha1 ? 'sha1' : 'md5'
+    const hashToVerify = download[hashType]
 
-    var hash = crypto.createHash(hashType)
+    const hash = crypto.createHash(hashType)
     hash.setEncoding('hex')
 
-    var stream = fs.createReadStream(filePath)
+    const stream = fs.createReadStream(filePath)
 
     stream.on('error', (error) => {
       return callback(error)
@@ -362,15 +361,15 @@ function checkSignatureMatch (filePath, download, callback) {
 }
 
 function downloadBook (bundle, name, download, callback) {
-  var downloadPath = path.resolve(commander.downloadFolder, sanitizeFilename(bundle))
+  const downloadPath = path.resolve(commander.downloadFolder, sanitizeFilename(bundle))
 
   ensureFolderCreated(downloadPath, (error) => {
     if (error) {
       return callback(error)
     }
 
-    var fileName = util.format('%s%s', name.trim(), getExtension(normalizeFormat(download.name)))
-    var filePath = path.resolve(downloadPath, sanitizeFilename(fileName))
+    const fileName = util.format('%s%s', name.trim(), getExtension(normalizeFormat(download.name)))
+    const filePath = path.resolve(downloadPath, sanitizeFilename(fileName))
 
     checkSignatureMatch(filePath, download, (error, matches) => {
       if (error) {
@@ -381,7 +380,7 @@ function downloadBook (bundle, name, download, callback) {
         return callback(null, true)
       }
 
-      var file = fs.createWriteStream(filePath)
+      const file = fs.createWriteStream(filePath)
 
       file.on('finish', () => {
         file.close(() => {
@@ -404,25 +403,25 @@ function downloadBundles (next, bundles) {
     return next()
   }
 
-  var downloads = []
+  const downloads = []
 
-  for (var bundle of bundles) {
-    var bundleName = bundle.product.human_name
-    var bundleDownloads = []
-    var bundleFormats = []
+  for (const bundle of bundles) {
+    const bundleName = bundle.product.human_name
+    const bundleDownloads = []
+    const bundleFormats = []
 
-    for (var subproduct of bundle.subproducts) {
-      var filteredDownloads = subproduct.downloads.filter((download) => {
+    for (const subproduct of bundle.subproducts) {
+      const filteredDownloads = subproduct.downloads.filter((download) => {
         return download.platform === 'ebook'
       })
 
-      var downloadStructs = flatten(keypath.get(filteredDownloads, '[].download_struct'))
-      var filteredDownloadStructs = downloadStructs.filter((download) => {
+      const downloadStructs = flatten(keypath.get(filteredDownloads, '[].download_struct'))
+      const filteredDownloadStructs = downloadStructs.filter((download) => {
         if (!download.name || !download.url) {
           return false
         }
 
-        var normalizedFormat = normalizeFormat(download.name)
+        const normalizedFormat = normalizeFormat(download.name)
 
         if (bundleFormats.indexOf(normalizedFormat) === -1 && SUPPORTED_FORMATS.indexOf(normalizedFormat) !== -1) {
           bundleFormats.push(normalizedFormat)
@@ -431,7 +430,7 @@ function downloadBundles (next, bundles) {
         return commander.format === 'all' || normalizedFormat === commander.format
       })
 
-      for (var filteredDownload of filteredDownloadStructs) {
+      for (const filteredDownload of filteredDownloadStructs) {
         bundleDownloads.push({
           bundle: bundleName,
           download: filteredDownload,
@@ -445,7 +444,7 @@ function downloadBundles (next, bundles) {
       continue
     }
 
-    for (var download of bundleDownloads) {
+    for (const download of bundleDownloads) {
       downloads.push(download)
     }
   }
