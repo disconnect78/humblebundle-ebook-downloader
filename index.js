@@ -30,9 +30,11 @@ commander
   .option('--auth-token <auth-token>', 'Optional: If you want to run headless, you can specify your authentication cookie from your browser (_simpleauth_sess)')
   .option('-a, --all', 'Download all bundles')
   .option('--debug', 'Enable debug logging', false)
-  .parse(process.argv)
+  .parse()
 
-if (ALLOWED_FORMATS.indexOf(commander.format) === -1) {
+const options = commander.opts()
+
+if (ALLOWED_FORMATS.indexOf(options.format) === -1) {
   console.error(colors.red('Invalid format selected.'))
   commander.help()
 }
@@ -40,7 +42,7 @@ if (ALLOWED_FORMATS.indexOf(commander.format) === -1) {
 const configPath = path.resolve(os.homedir(), '.humblebundle_ebook_downloader.json')
 const flow = Breeze()
 const limiter = new Bottleneck({ // Limit concurrent downloads
-  maxConcurrent: commander.downloadLimit
+  maxConcurrent: options.downloadLimit
 })
 
 console.log(colors.green('Starting...'))
@@ -222,13 +224,13 @@ function getWindowHeight () {
 }
 
 function displayOrders (next, orders) {
-  const options = []
+  const choices = []
 
   for (const order of orders) {
-    options.push(order.product.human_name)
+    choices.push(order.product.human_name)
   }
 
-  options.sort((a, b) => {
+  choices.sort((a, b) => {
     return a.localeCompare(b)
   })
 
@@ -238,7 +240,7 @@ function displayOrders (next, orders) {
     type: 'checkbox',
     name: 'bundle',
     message: 'Select bundles to download',
-    choices: options,
+    choices,
     pageSize: getWindowHeight() - 2
   }).then((answers) => {
     next(null, orders.filter((item) => {
@@ -327,7 +329,7 @@ function checkSignatureMatch (filePath, download, callback) {
 }
 
 function downloadBook (bundle, name, download, callback) {
-  const downloadPath = path.resolve(commander.downloadFolder, sanitizeFilename(bundle))
+  const downloadPath = path.resolve(options.downloadFolder, sanitizeFilename(bundle))
 
   ensureFolderCreated(downloadPath, (error) => {
     if (error) {
@@ -393,7 +395,7 @@ function downloadBundles (next, bundles) {
           bundleFormats.push(normalizedFormat)
         }
 
-        return commander.format === 'all' || normalizedFormat === commander.format
+        return options.format === 'all' || normalizedFormat === options.format
       })
 
       for (const filteredDownload of filteredDownloadStructs) {
@@ -406,7 +408,7 @@ function downloadBundles (next, bundles) {
     }
 
     if (!bundleDownloads.length) {
-      console.log(colors.red('No downloads found matching the right format (%s) for bundle (%s), available formats: (%s)'), commander.format, bundleName, bundleFormats.sort().join(', '))
+      console.log(colors.red('No downloads found matching the right format (%s) for bundle (%s), available formats: (%s)'), options.format, bundleName, bundleFormats.sort().join(', '))
       continue
     }
 
@@ -416,7 +418,7 @@ function downloadBundles (next, bundles) {
   }
 
   if (!downloads.length) {
-    console.log(colors.red('No downloads found matching the right format (%s), exiting'), commander.format)
+    console.log(colors.red('No downloads found matching the right format (%s), exiting'), options.format)
   }
 
   async.each(downloads, (download, next) => {
@@ -448,8 +450,8 @@ flow.then(loadConfig)
 flow.then(validateSession)
 flow.when((session) => !session, authenticate)
 flow.then(fetchOrders)
-flow.when(!commander.all, displayOrders)
-flow.when(commander.all, sortBundles)
+flow.when(!options.all, displayOrders)
+flow.when(options.all, sortBundles)
 flow.then(downloadBundles)
 
 flow.catch((error) => {

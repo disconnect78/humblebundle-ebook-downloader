@@ -19,7 +19,7 @@
     "bottleneck": "^2.19.5",
     "breeze": "^1.2.2",
     "colors": "^1.4.0",
-    "commander": "^2.19.0",
+    "commander": "^8.3.0",
     "inquirer": "^8.2.0",
     "mkdirp": "^1.0.4",
     "nasa-keypath": "0.0.1",
