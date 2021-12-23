@@ -15,6 +15,7 @@ const sanitizeFilename = require('sanitize-filename')
 const util = require('util')
 const path = require('path')
 const fs = require('fs')
+const { readFile } = require('fs/promises')
 const os = require('os')
 const userAgent = util.format('Humblebundle-Ebook-Downloader/%s', packageInfo.version)
 const playwright = require('playwright')
@@ -47,26 +48,16 @@ const limiter = new Bottleneck({ // Limit concurrent downloads
 
 console.log(colors.green('Starting...'))
 
-function loadConfig (next) {
-  fs.access(configPath, (error) => {
-    if (error) {
-      if (error.code === 'ENOENT') {
-        return next(null, {})
-      }
-
-      return next(error)
+async function loadConfig () {
+  try {
+    return readFile(configPath, { encoding: 'utf8' })
+  } catch (error) {
+    if (error.code === 'ENOENT') {
+      return {}
     }
 
-    let config
-
-    try {
-      config = require(configPath)
-    } catch (ignore) {
-      config = {}
-    }
-
-    next(null, config)
-  })
+    throw error
+  }
 }
 
 function getRequestHeaders (session) {
@@ -78,18 +69,18 @@ function getRequestHeaders (session) {
   }
 }
 
-function validateSession (next, config) {
+function validateSession (config) {
   console.log('Validating session...')
 
   let session = config.session
 
   if (!commander.authToken) {
     if (!config.session || !config.expires) {
-      return next()
+      return null
     }
 
     if (config.expires < new Date()) {
-      return next()
+      return null
     }
   } else {
     session = util.format('"%s"', commander.authToken.replace(/^"|"$/g, ''))
@@ -101,18 +92,18 @@ function validateSession (next, config) {
     json: true
   }, (error, response) => {
     if (error) {
-      return next(error)
+      throw error
     }
 
     if (response.statusCode === 200) {
-      return next(null, session)
+      return session
     }
 
     if (response.statusCode === 401 && !commander.authToken) {
-      return next(null)
+      return null
     }
 
-    return next(new Error(util.format('Could not validate session, unknown error, status code:', response.statusCode)))
+    throw new Error(util.format('Could not validate session, unknown error, status code:', response.statusCode))
   })
 }
 
@@ -126,42 +117,38 @@ function debug () {
   }
 }
 
-async function authenticate (next) {
+async function authenticate () {
   console.log('Authenticating...')
 
-  try {
-    const browser = await playwright.chromium.launch({
-      headless: false
-    })
-    const context = await browser.newContext()
-    const page = await context.newPage()
+  const browser = await playwright.chromium.launch({
+    headless: false
+  })
+  const context = await browser.newContext()
+  const page = await context.newPage()
 
-    await page.goto('https://www.humblebundle.com/login?goto=%2Fhome%2Flibrary')
+  await page.goto('https://www.humblebundle.com/login?goto=%2Fhome%2Flibrary')
 
-    // We disable the default 30s timeout as 2FA would take longer than that
-    await page.waitForURL('https://www.humblebundle.com/home/library', { timeout: 0 })
+  // We disable the default 30s timeout as 2FA would take longer than that
+  await page.waitForURL('https://www.humblebundle.com/home/library', { timeout: 0 })
 
-    const cookies = await context.cookies()
-    const [sessionCookie] = cookies.filter(cookie => cookie.name === '_simpleauth_sess')
+  const cookies = await context.cookies()
+  const [sessionCookie] = cookies.filter(cookie => cookie.name === '_simpleauth_sess')
 
-    await browser.close()
+  await browser.close()
 
-    saveConfig({
-      session: sessionCookie.value,
-      expires: new Date(sessionCookie.expires * 1000)
-    }, (error) => {
-      if (error) {
-        return next(error)
-      }
+  saveConfig({
+    session: sessionCookie.value,
+    expires: new Date(sessionCookie.expires * 1000)
+  }, (error) => {
+    if (error) {
+      throw error
+    }
 
-      next(null, sessionCookie.value)
-    })
-  } catch (error) {
-    next(error)
-  }
+    return sessionCookie.value
+  })
 }
 
-function fetchOrders (next, session) {
+function fetchOrders (session) {
   console.log('Fetching bundles...')
 
   request.get({
@@ -170,11 +157,11 @@ function fetchOrders (next, session) {
     json: true
   }, (error, response) => {
     if (error) {
-      return next(error)
+      throw error
     }
 
     if (response.statusCode !== 200) {
-      return next(new Error(util.format('Could not fetch orders, unknown error, status code:', response.statusCode)))
+      throw new Error(util.format('Could not fetch orders, unknown error, status code:', response.statusCode))
     }
 
     const total = response.body.length
@@ -185,35 +172,35 @@ function fetchOrders (next, session) {
       minTime: 500
     })
 
-    async.concat(response.body, (item, next) => {
-      orderInfoLimiter.submit((next) => {
+    async.concat(response.body, (item) => {
+      orderInfoLimiter.submit(() => {
         request.get({
           url: util.format('https://www.humblebundle.com/api/v1/order/%s?ajax=true', item.gamekey),
           headers: getRequestHeaders(session),
           json: true
         }, (error, response) => {
           if (error) {
-            return next(error)
+            throw error
           }
 
           if (response.statusCode !== 200) {
-            return next(new Error(util.format('Could not fetch orders, unknown error, status code:', response.statusCode)))
+            throw new Error(util.format('Could not fetch orders, unknown error, status code:', response.statusCode))
           }
 
           console.log('Fetched bundle information... (%s/%s)', colors.yellow(++done), colors.yellow(total))
-          next(null, response.body)
+          return response.body
         })
-      }, next)
+      })
     }, (error, orders) => {
       if (error) {
-        return next(error)
+        throw error
       }
 
       const filteredOrders = orders.filter((order) => {
         return flatten(keypath.get(order, 'subproducts.[].downloads.[].platform')).indexOf('ebook') !== -1
       })
 
-      next(null, filteredOrders, session)
+      return filteredOrders
     })
   })
 }
@@ -223,7 +210,7 @@ function getWindowHeight () {
   return windowSize[windowSize.length - 1]
 }
 
-function displayOrders (next, orders) {
+function displayOrders (orders) {
   const choices = []
 
   for (const order of orders) {
@@ -243,16 +230,16 @@ function displayOrders (next, orders) {
     choices,
     pageSize: getWindowHeight() - 2
   }).then((answers) => {
-    next(null, orders.filter((item) => {
+    return orders.filter((item) => {
       return answers.bundle.indexOf(item.product.human_name) !== -1
-    }))
+    })
   })
 }
 
-function sortBundles (next, bundles) {
-  next(null, bundles.sort((a, b) => {
+function sortBundles (bundles) {
+  return bundles.sort((a, b) => {
     return a.product.human_name.localeCompare(b.product.human_name)
-  }))
+  })
 }
 
 function flatten (list) {
@@ -365,10 +352,10 @@ function downloadBook (bundle, name, download, callback) {
   })
 }
 
-function downloadBundles (next, bundles) {
+function downloadBundles (bundles) {
   if (!bundles.length) {
     console.log(colors.green('No bundles selected, exiting'))
-    return next()
+    return
   }
 
   const downloads = []
@@ -421,41 +408,59 @@ function downloadBundles (next, bundles) {
     console.log(colors.red('No downloads found matching the right format (%s), exiting'), options.format)
   }
 
-  async.each(downloads, (download, next) => {
-    limiter.submit((next) => {
+  async.each(downloads, (download) => {
+    limiter.submit(() => {
       console.log('Downloading %s - %s (%s) (%s)... (%s/%s)', download.bundle, download.name, download.download.name, download.download.human_size, colors.yellow(downloads.indexOf(download) + 1), colors.yellow(downloads.length))
       downloadBook(download.bundle, download.name, download.download, (error, skipped) => {
         if (error) {
-          return next(error)
+          throw error
         }
 
         if (skipped) {
           console.log('Skipped downloading of %s - %s (%s) (%s) - already exists... (%s/%s)', download.bundle, download.name, download.download.name, download.download.human_size, colors.yellow(downloads.indexOf(download) + 1), colors.yellow(downloads.length))
         }
-
-        next()
       })
-    }, next)
+    })
   }, (error) => {
     if (error) {
-      return next(error)
+      throw error
     }
 
     console.log(colors.green('Done'))
-    next()
   })
 }
 
-flow.then(loadConfig)
-flow.then(validateSession)
-flow.when((session) => !session, authenticate)
-flow.then(fetchOrders)
-flow.when(!options.all, displayOrders)
-flow.when(options.all, sortBundles)
-flow.then(downloadBundles)
+async function main () {
+  try {
+    const config = await loadConfig()
+    console.log('🚀 ~ file: index.js ~ line 436 ~ main ~ config', config)
+    let session
+    session = await validateSession(config)
+    if (!session) {
+      session = await authenticate()
+    }
+    const orders = await fetchOrders(session)
+    const download = await displayOrders(orders)
+    await downloadBundles(download)
+  } catch (error) {
+    console.error(colors.red('An error occured, exiting.'))
+    console.error(error)
+    process.exit(1)
+  }
+}
 
-flow.catch((error) => {
-  console.error(colors.red('An error occured, exiting.'))
-  console.error(error)
-  process.exit(1)
-})
+main()
+
+// flow.then(loadConfig)
+// flow.then(validateSession)
+// flow.when((session) => !session, authenticate)
+// flow.then(fetchOrders)
+// flow.when(!options.all, displayOrders)
+// flow.when(options.all, sortBundles)
+// flow.then(downloadBundles)
+
+// flow.catch((error) => {
+//   console.error(colors.red('An error occured, exiting.'))
+//   console.error(error)
+//   process.exit(1)
+// })
