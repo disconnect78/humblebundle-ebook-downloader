@@ -144,61 +144,43 @@ async function authenticate () {
   })
 }
 
-function fetchOrders (session) {
+async function fetchOrders (session) {
   console.log('Fetching bundles...')
 
-  request.get({
-    url: 'https://www.humblebundle.com/api/v1/user/order?ajax=true',
-    headers: getRequestHeaders(session),
-    json: true
-  }, (error, response) => {
-    if (error) {
-      throw error
-    }
-
-    if (response.statusCode !== 200) {
-      throw new Error(util.format('Could not fetch orders, unknown error, status code:', response.statusCode))
-    }
-
-    const total = response.body.length
-    let done = 0
-
-    const orderInfoLimiter = new Bottleneck({
-      maxConcurrent: 5,
-      minTime: 500
-    })
-
-    async.concat(response.body, (item) => {
-      orderInfoLimiter.submit(() => {
-        request.get({
-          url: util.format('https://www.humblebundle.com/api/v1/order/%s?ajax=true', item.gamekey),
-          headers: getRequestHeaders(session),
-          json: true
-        }, (error, response) => {
-          if (error) {
-            throw error
-          }
-
-          if (response.statusCode !== 200) {
-            throw new Error(util.format('Could not fetch orders, unknown error, status code:', response.statusCode))
-          }
-
-          console.log('Fetched bundle information... (%s/%s)', colors.yellow(++done), colors.yellow(total))
-          return response.body
-        })
-      })
-    }, (error, orders) => {
-      if (error) {
-        throw error
-      }
-
-      const filteredOrders = orders.filter((order) => {
-        return flatten(keypath.get(order, 'subproducts.[].downloads.[].platform')).indexOf('ebook') !== -1
-      })
-
-      return filteredOrders
-    })
+  const allBundles = await axios.get('https://www.humblebundle.com/api/v1/user/order?ajax=true', {
+    headers: getRequestHeaders(session)
   })
+
+  if (allBundles.status !== 200) {
+    throw new Error(util.format('Could not fetch orders, unknown error, status code:', allBundles.status))
+  }
+
+  // TODO: REMOVE THIS JUST FOR TESTING
+  allBundles.data.length = 5
+
+  const total = allBundles.data.length
+  let done = 0
+  const orders = []
+
+  for (const { gamekey } of allBundles.data) {
+    const bundle = await axios.get(util.format('https://www.humblebundle.com/api/v1/order/%s?ajax=true', gamekey), {
+      headers: getRequestHeaders(session)
+    })
+
+    if (bundle.status !== 200) {
+      throw new Error(util.format('Could not fetch orders, unknown error, status code:', allBundles.statusCode))
+    }
+
+    done += 1
+    console.log('Fetched bundle information... (%s/%s)', colors.yellow(done), colors.yellow(total))
+    orders.push(bundle.data)
+  }
+
+  const filteredOrders = orders.filter((order) => {
+    return flatten(keypath.get(order, 'subproducts.[].downloads.[].platform')).indexOf('ebook') !== -1
+  })
+
+  return filteredOrders
 }
 
 function getWindowHeight () {
@@ -206,7 +188,7 @@ function getWindowHeight () {
   return windowSize[windowSize.length - 1]
 }
 
-function displayOrders (orders) {
+async function displayOrders (orders) {
   const choices = []
 
   for (const order of orders) {
@@ -219,16 +201,16 @@ function displayOrders (orders) {
 
   process.stdout.write('\x1Bc') // Clear console
 
-  inquirer.prompt({
+  const answers = await inquirer.prompt({
     type: 'checkbox',
     name: 'bundle',
     message: 'Select bundles to download',
     choices,
     pageSize: getWindowHeight() - 2
-  }).then((answers) => {
-    return orders.filter((item) => {
-      return answers.bundle.indexOf(item.product.human_name) !== -1
-    })
+  })
+
+  return orders.filter((item) => {
+    return answers.bundle.indexOf(item.product.human_name) !== -1
   })
 }
 
@@ -435,6 +417,7 @@ async function main () {
     if (!session) {
       session = await authenticate()
     }
+
     const orders = await fetchOrders(session)
     const download = await displayOrders(orders)
     await downloadBundles(download)
