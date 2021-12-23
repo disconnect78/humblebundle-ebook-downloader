@@ -4,6 +4,7 @@ const async = require('async')
 const commander = require('commander')
 const packageInfo = require('./package.json')
 const request = require('request')
+const axios = require('axios')
 const Breeze = require('breeze')
 const Bottleneck = require('bottleneck')
 const colors = require('colors')
@@ -50,7 +51,8 @@ console.log(colors.green('Starting...'))
 
 async function loadConfig () {
   try {
-    return readFile(configPath, { encoding: 'utf8' })
+    const file = await readFile(configPath, { encoding: 'ascii' })
+    return JSON.parse(file)
   } catch (error) {
     if (error.code === 'ENOENT') {
       return {}
@@ -69,7 +71,7 @@ function getRequestHeaders (session) {
   }
 }
 
-function validateSession (config) {
+async function validateSession (config) {
   console.log('Validating session...')
 
   let session = config.session
@@ -86,25 +88,19 @@ function validateSession (config) {
     session = util.format('"%s"', commander.authToken.replace(/^"|"$/g, ''))
   }
 
-  request.get({
-    url: 'https://www.humblebundle.com/api/v1/user/order?ajax=true',
-    headers: getRequestHeaders(session),
-    json: true
-  }, (error, response) => {
-    if (error) {
-      throw error
-    }
-
-    if (response.statusCode === 200) {
-      return session
-    }
-
-    if (response.statusCode === 401 && !commander.authToken) {
-      return null
-    }
-
-    throw new Error(util.format('Could not validate session, unknown error, status code:', response.statusCode))
+  const { status } = await axios.get('https://www.humblebundle.com/api/v1/user/order?ajax=true', {
+    headers: getRequestHeaders(session)
   })
+
+  if (status === 200) {
+    return session
+  }
+
+  if (status === 401 && !commander.authToken) {
+    return null
+  }
+
+  throw new Error(util.format('Could not validate session, unknown error, status code:', status))
 }
 
 function saveConfig (config, callback) {
@@ -433,7 +429,7 @@ function downloadBundles (bundles) {
 async function main () {
   try {
     const config = await loadConfig()
-    console.log('🚀 ~ file: index.js ~ line 436 ~ main ~ config', config)
+
     let session
     session = await validateSession(config)
     if (!session) {
