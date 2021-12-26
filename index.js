@@ -1,14 +1,9 @@
 #!/usr/bin/env node
 
-const async = require('async')
 const commander = require('commander')
 const packageInfo = require('./package.json')
-const request = require('request')
 const axios = require('axios')
-const Breeze = require('breeze')
-const Bottleneck = require('bottleneck')
 const colors = require('colors')
-const crypto = require('crypto')
 const inquirer = require('inquirer')
 const keypath = require('nasa-keypath')
 const mkdirp = require('mkdirp')
@@ -20,6 +15,13 @@ const { readFile } = require('fs/promises')
 const os = require('os')
 const userAgent = util.format('Humblebundle-Ebook-Downloader/%s', packageInfo.version)
 const playwright = require('playwright')
+const PMap = require('p-map')
+const { default: PQueue } = require('p-queue')
+const hasha = require('hasha')
+const Got = require('got')
+const { promisify } = require('util')
+const stream = require('stream')
+const pipeline = promisify(stream.pipeline)
 
 const SUPPORTED_FORMATS = ['epub', 'mobi', 'pdf', 'pdf_hd', 'cbz']
 const ALLOWED_FORMATS = SUPPORTED_FORMATS.concat(['all']).sort()
@@ -42,10 +44,6 @@ if (ALLOWED_FORMATS.indexOf(options.format) === -1) {
 }
 
 const configPath = path.resolve(os.homedir(), '.humblebundle_ebook_downloader.json')
-const flow = Breeze()
-const limiter = new Bottleneck({ // Limit concurrent downloads
-  maxConcurrent: options.downloadLimit
-})
 
 console.log(colors.green('Starting...'))
 
@@ -156,7 +154,7 @@ async function fetchOrders (session) {
   }
 
   // TODO: REMOVE THIS JUST FOR TESTING
-  allBundles.data.length = 5
+  allBundles.data.length = 30
 
   const total = allBundles.data.length
   let done = 0
@@ -214,28 +212,8 @@ async function displayOrders (orders) {
   })
 }
 
-function sortBundles (bundles) {
-  return bundles.sort((a, b) => {
-    return a.product.human_name.localeCompare(b.product.human_name)
-  })
-}
-
 function flatten (list) {
   return list.reduce((a, b) => a.concat(Array.isArray(b) ? flatten(b) : b), [])
-}
-
-function ensureFolderCreated (folder, callback) {
-  fs.access(folder, (error) => {
-    if (error && error.code !== 'ENOENT') {
-      return callback(error)
-    }
-
-    mkdirp(folder).then(made => {
-      callback()
-    }).catch(error => {
-      callback(error)
-    })
-  })
 }
 
 function normalizeFormat (format) {
@@ -261,76 +239,23 @@ function getExtension (format) {
   }
 }
 
-function checkSignatureMatch (filePath, download, callback) {
-  fs.access(filePath, (error) => {
-    if (error) {
-      if (error.code === 'ENOENT') {
-        return callback()
-      }
-
-      return callback(error)
-    }
-
-    const hashType = download.sha1 ? 'sha1' : 'md5'
-    const hashToVerify = download[hashType]
-
-    const hash = crypto.createHash(hashType)
-    hash.setEncoding('hex')
-
-    const stream = fs.createReadStream(filePath)
-
-    stream.on('error', (error) => {
-      return callback(error)
-    })
-
-    stream.on('end', () => {
-      hash.end()
-
-      return callback(null, hash.read() === hashToVerify)
-    })
-
-    stream.pipe(hash)
-  })
+async function checkSignatureMatch (filePath, download) {
+  if (fs.existsSync(filePath)) {
+    const algorithm = download.sha1 ? 'sha1' : 'md5'
+    const hashToVerify = download[algorithm]
+    const hash = await hasha.fromFile(filePath, { algorithm })
+    return hash === hashToVerify
+  }
+  return false
 }
 
-function downloadBook (bundle, name, download, callback) {
-  const downloadPath = path.resolve(options.downloadFolder, sanitizeFilename(bundle))
+let totalDownloads = 0
+let doneDownloads = 0
 
-  ensureFolderCreated(downloadPath, (error) => {
-    if (error) {
-      return callback(error)
-    }
+const downloadQueue = new PQueue({ concurrency: options.downloadLimit })
+const downloadPromises = []
 
-    const fileName = util.format('%s%s', name.trim(), getExtension(normalizeFormat(download.name)))
-    const filePath = path.resolve(downloadPath, sanitizeFilename(fileName))
-
-    checkSignatureMatch(filePath, download, (error, matches) => {
-      if (error) {
-        return callback(error)
-      }
-
-      if (matches) {
-        return callback(null, true)
-      }
-
-      const file = fs.createWriteStream(filePath)
-
-      file.on('finish', () => {
-        file.close(() => {
-          callback()
-        })
-      })
-
-      request.get({
-        url: download.url.web
-      }).on('error', (error) => {
-        callback(error)
-      }).pipe(file)
-    })
-  })
-}
-
-function downloadBundles (bundles) {
+async function processBundles (bundles) {
   if (!bundles.length) {
     console.log(colors.green('No bundles selected, exiting'))
     return
@@ -386,26 +311,97 @@ function downloadBundles (bundles) {
     console.log(colors.red('No downloads found matching the right format (%s), exiting'), options.format)
   }
 
-  async.each(downloads, (download) => {
-    limiter.submit(() => {
-      console.log('Downloading %s - %s (%s) (%s)... (%s/%s)', download.bundle, download.name, download.download.name, download.download.human_size, colors.yellow(downloads.indexOf(download) + 1), colors.yellow(downloads.length))
-      downloadBook(download.bundle, download.name, download.download, (error, skipped) => {
-        if (error) {
-          throw error
-        }
+  console.log(`Downloading ${bundles.length} bundles`)
 
-        if (skipped) {
-          console.log('Skipped downloading of %s - %s (%s) (%s) - already exists... (%s/%s)', download.bundle, download.name, download.download.name, download.download.human_size, colors.yellow(downloads.indexOf(download) + 1), colors.yellow(downloads.length))
-        }
-      })
-    })
-  }, (error) => {
-    if (error) {
-      throw error
-    }
+  totalDownloads = downloads.length
 
-    console.log(colors.green('Done'))
+  return PMap(downloads, downloadEbook, { concurrency: 5 })
+}
+
+// function downloadBundlesOLD (bundles) {
+//   if (!bundles.length) {
+//     console.log(colors.green('No bundles selected, exiting'))
+//     return
+//   }
+
+//   async.each(downloads, (download) => {
+//     limiter.submit(() => {
+//       console.log('Downloading %s - %s (%s) (%s)... (%s/%s)', download.bundle, download.name, download.download.name, download.download.human_size, colors.yellow(downloads.indexOf(download) + 1), colors.yellow(downloads.length))
+//       downloadBook(download.bundle, download.name, download.download, (error, skipped) => {
+//         if (error) {
+//           throw error
+//         }
+
+//         if (skipped) {
+//           console.log('Skipped downloading of %s - %s (%s) (%s) - already exists... (%s/%s)', download.bundle, download.name, download.download.name, download.download.human_size, colors.yellow(downloads.indexOf(download) + 1), colors.yellow(downloads.length))
+//         }
+//       })
+//     })
+//   }, (error) => {
+//     if (error) {
+//       throw error
+//     }
+
+//     console.log(colors.green('Done'))
+//   })
+// }
+
+async function downloadEbook (download) {
+  const downloadPath = path.resolve(
+    options.downloadFolder,
+    sanitizeFilename(download.bundle)
+  )
+  await mkdirp(downloadPath)
+
+  const fileName = `${download.name.trim()}${getExtension(
+    normalizeFormat(download.download.name)
+  )}`
+
+  const filePath = path.resolve(downloadPath, sanitizeFilename(fileName))
+  const fileExists = await checkSignatureMatch(filePath, download.download)
+
+  if (!fileExists) {
+    downloadPromises.push(
+      downloadQueue.add(() => doDownload(filePath, download))
+    )
+  } else {
+    console.log(
+      'Skipped downloading of %s (%s) (%s) - already exists... (%s/%s)',
+      download.name,
+      normalizeFormat(download.download.name),
+      download.download.human_size,
+      colors.yellow(++doneDownloads),
+      colors.yellow(totalDownloads)
+    )
+  }
+}
+
+async function doDownload (filePath, download) {
+  console.log(
+    'Downloading %s - %s (%s) (%s)...',
+    download.bundle,
+    download.name,
+    normalizeFormat(download.download.name),
+    download.download.human_size
+  )
+
+  await new Promise((resolve, reject) => {
+    const downloadStream = Got.stream(download.download.url.web)
+    const writer = fs.createWriteStream(filePath)
+    pipeline(downloadStream, writer)
+      .then(() => resolve())
+      .catch((error) => console.error(`Something went wrong. ${error.message}`))
   })
+
+  console.log(
+    'Downloaded %s - %s (%s) (%s)... (%s/%s)',
+    download.bundle,
+    download.name,
+    normalizeFormat(download.download.name),
+    download.download.human_size,
+    colors.yellow(++doneDownloads),
+    colors.yellow(totalDownloads)
+  )
 }
 
 async function main () {
@@ -419,8 +415,11 @@ async function main () {
     }
 
     const orders = await fetchOrders(session)
-    const download = await displayOrders(orders)
-    await downloadBundles(download)
+    const bundles = await displayOrders(orders)
+    await processBundles(bundles)
+    await Promise.all(downloadPromises)
+    console.log(colors.green('Done!'))
+    process.exit(1)
   } catch (error) {
     console.error(colors.red('An error occured, exiting.'))
     console.error(error)
