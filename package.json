@@ -16,7 +16,6 @@
   "author": "David Marby <david@dmarby.se> http://dmarby.se",
   "dependencies": {
     "async": "^3.2.2",
-    "axios": "^0.24.0",
     "bottleneck": "^2.19.5",
     "breeze": "^1.2.2",
     "colors": "^1.4.0",

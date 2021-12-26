@@ -2,7 +2,6 @@
 
 const commander = require('commander')
 const packageInfo = require('./package.json')
-const axios = require('axios')
 const colors = require('colors')
 const inquirer = require('inquirer')
 const keypath = require('nasa-keypath')
@@ -86,19 +85,19 @@ async function validateSession (config) {
     session = util.format('"%s"', commander.authToken.replace(/^"|"$/g, ''))
   }
 
-  const { status } = await axios.get('https://www.humblebundle.com/api/v1/user/order?ajax=true', {
+  const { statusCode } = await Got.get('https://www.humblebundle.com/api/v1/user/order?ajax=true', {
     headers: getRequestHeaders(session)
   })
 
-  if (status === 200) {
+  if (statusCode === 200) {
     return session
   }
 
-  if (status === 401 && !commander.authToken) {
+  if (statusCode === 401 && !commander.authToken) {
     return null
   }
 
-  throw new Error(util.format('Could not validate session, unknown error, status code:', status))
+  throw new Error(util.format('Could not validate session, unknown error, status code:', statusCode))
 }
 
 function saveConfig (config, callback) {
@@ -145,33 +144,32 @@ async function authenticate () {
 async function fetchOrders (session) {
   console.log('Fetching bundles...')
 
-  const allBundles = await axios.get('https://www.humblebundle.com/api/v1/user/order?ajax=true', {
+  const response = await Got.get('https://www.humblebundle.com/api/v1/user/order?ajax=true', {
     headers: getRequestHeaders(session)
   })
 
-  if (allBundles.status !== 200) {
-    throw new Error(util.format('Could not fetch orders, unknown error, status code:', allBundles.status))
+  if (response.statusCode !== 200) {
+    throw new Error(util.format('Could not fetch orders, unknown error, status code:', response.statusCode))
   }
 
-  // TODO: REMOVE THIS JUST FOR TESTING
-  allBundles.data.length = 30
+  const allBundles = JSON.parse(response.body)
 
-  const total = allBundles.data.length
+  const total = allBundles.length
   let done = 0
   const orders = []
 
-  for (const { gamekey } of allBundles.data) {
-    const bundle = await axios.get(util.format('https://www.humblebundle.com/api/v1/order/%s?ajax=true', gamekey), {
+  for (const { gamekey } of allBundles) {
+    const bundle = await Got.get(util.format('https://www.humblebundle.com/api/v1/order/%s?ajax=true', gamekey), {
       headers: getRequestHeaders(session)
     })
 
-    if (bundle.status !== 200) {
-      throw new Error(util.format('Could not fetch orders, unknown error, status code:', allBundles.statusCode))
+    if (bundle.statusCode !== 200) {
+      throw new Error(util.format('Could not fetch orders, unknown error, status code:', bundle.statusCode))
     }
 
     done += 1
     console.log('Fetched bundle information... (%s/%s)', colors.yellow(done), colors.yellow(total))
-    orders.push(bundle.data)
+    orders.push(JSON.parse(bundle.body))
   }
 
   const filteredOrders = orders.filter((order) => {
