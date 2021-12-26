@@ -12,15 +12,12 @@ const path = require('path')
 const fs = require('fs')
 const { readFile } = require('fs/promises')
 const os = require('os')
-const userAgent = util.format('Humblebundle-Ebook-Downloader/%s', packageInfo.version)
 const playwright = require('playwright')
 const PMap = require('p-map')
 const { default: PQueue } = require('p-queue')
 const hasha = require('hasha')
 const Got = require('got')
-const { promisify } = require('util')
-const stream = require('stream')
-const pipeline = promisify(stream.pipeline)
+const { pipeline } = require('stream/promises')
 
 const SUPPORTED_FORMATS = ['epub', 'mobi', 'pdf', 'pdf_hd', 'cbz']
 const ALLOWED_FORMATS = SUPPORTED_FORMATS.concat(['all']).sort()
@@ -37,6 +34,11 @@ commander
 
 const options = commander.opts()
 
+let totalDownloads = 0
+let doneDownloads = 0
+const downloadQueue = new PQueue({ concurrency: options.downloadLimit })
+const downloadPromises = []
+
 if (ALLOWED_FORMATS.indexOf(options.format) === -1) {
   console.error(colors.red('Invalid format selected.'))
   commander.help()
@@ -45,6 +47,8 @@ if (ALLOWED_FORMATS.indexOf(options.format) === -1) {
 const configPath = path.resolve(os.homedir(), '.humblebundle_ebook_downloader.json')
 
 console.log(colors.green('Starting...'))
+
+main()
 
 async function loadConfig () {
   try {
@@ -59,7 +63,9 @@ async function loadConfig () {
   }
 }
 
-function getRequestHeaders (session) {
+const userAgent = util.format('Humblebundle-Ebook-Downloader/%s', packageInfo.version)
+
+const getRequestHeaders = (session) => {
   return {
     Accept: 'application/json',
     'Accept-Charset': 'utf-8',
@@ -71,7 +77,7 @@ function getRequestHeaders (session) {
 async function validateSession (config) {
   console.log('Validating session...')
 
-  let session = config.session
+  let { session } = config
 
   if (!commander.authToken) {
     if (!config.session || !config.expires) {
@@ -173,7 +179,10 @@ async function fetchOrders (session) {
   }
 
   const filteredOrders = orders.filter((order) => {
-    return flatten(keypath.get(order, 'subproducts.[].downloads.[].platform')).indexOf('ebook') !== -1
+    return keypath
+      .get(order, 'subproducts.[].downloads.[].platform')
+      .flat()
+      .indexOf('ebook') !== -1
   })
 
   return filteredOrders
@@ -185,15 +194,9 @@ function getWindowHeight () {
 }
 
 async function displayOrders (orders) {
-  const choices = []
-
-  for (const order of orders) {
-    choices.push(order.product.human_name)
-  }
-
-  choices.sort((a, b) => {
-    return a.localeCompare(b)
-  })
+  const choices = orders
+    .map(order => order.product.human_name)
+    .sort((a, b) => a.localeCompare(b))
 
   process.stdout.write('\x1Bc') // Clear console
 
@@ -208,10 +211,6 @@ async function displayOrders (orders) {
   return orders.filter((item) => {
     return answers.bundle.indexOf(item.product.human_name) !== -1
   })
-}
-
-function flatten (list) {
-  return list.reduce((a, b) => a.concat(Array.isArray(b) ? flatten(b) : b), [])
 }
 
 function normalizeFormat (format) {
@@ -247,12 +246,6 @@ async function checkSignatureMatch (filePath, download) {
   return false
 }
 
-let totalDownloads = 0
-let doneDownloads = 0
-
-const downloadQueue = new PQueue({ concurrency: options.downloadLimit })
-const downloadPromises = []
-
 async function processBundles (bundles) {
   if (!bundles.length) {
     console.log(colors.green('No bundles selected, exiting'))
@@ -271,7 +264,10 @@ async function processBundles (bundles) {
         return download.platform === 'ebook'
       })
 
-      const downloadStructs = flatten(keypath.get(filteredDownloads, '[].download_struct'))
+      const downloadStructs = keypath
+        .get(filteredDownloads, '[].download_struct')
+        .flat()
+
       const filteredDownloadStructs = downloadStructs.filter((download) => {
         if (!download.name || !download.url) {
           return false
@@ -316,34 +312,6 @@ async function processBundles (bundles) {
   return PMap(downloads, downloadEbook, { concurrency: 5 })
 }
 
-// function downloadBundlesOLD (bundles) {
-//   if (!bundles.length) {
-//     console.log(colors.green('No bundles selected, exiting'))
-//     return
-//   }
-
-//   async.each(downloads, (download) => {
-//     limiter.submit(() => {
-//       console.log('Downloading %s - %s (%s) (%s)... (%s/%s)', download.bundle, download.name, download.download.name, download.download.human_size, colors.yellow(downloads.indexOf(download) + 1), colors.yellow(downloads.length))
-//       downloadBook(download.bundle, download.name, download.download, (error, skipped) => {
-//         if (error) {
-//           throw error
-//         }
-
-//         if (skipped) {
-//           console.log('Skipped downloading of %s - %s (%s) (%s) - already exists... (%s/%s)', download.bundle, download.name, download.download.name, download.download.human_size, colors.yellow(downloads.indexOf(download) + 1), colors.yellow(downloads.length))
-//         }
-//       })
-//     })
-//   }, (error) => {
-//     if (error) {
-//       throw error
-//     }
-
-//     console.log(colors.green('Done'))
-//   })
-// }
-
 async function downloadEbook (download) {
   const downloadPath = path.resolve(
     options.downloadFolder,
@@ -351,11 +319,11 @@ async function downloadEbook (download) {
   )
   await mkdirp(downloadPath)
 
-  const fileName = `${download.name.trim()}${getExtension(
-    normalizeFormat(download.download.name)
-  )}`
+  const name = download.name.trim()
+  const extension = getExtension(normalizeFormat(download.download.name))
+  const filename = `${name}${extension}`
 
-  const filePath = path.resolve(downloadPath, sanitizeFilename(fileName))
+  const filePath = path.resolve(downloadPath, sanitizeFilename(filename))
   const fileExists = await checkSignatureMatch(filePath, download.download)
 
   if (!fileExists) {
@@ -424,19 +392,3 @@ async function main () {
     process.exit(1)
   }
 }
-
-main()
-
-// flow.then(loadConfig)
-// flow.then(validateSession)
-// flow.when((session) => !session, authenticate)
-// flow.then(fetchOrders)
-// flow.when(!options.all, displayOrders)
-// flow.when(options.all, sortBundles)
-// flow.then(downloadBundles)
-
-// flow.catch((error) => {
-//   console.error(colors.red('An error occured, exiting.'))
-//   console.error(error)
-//   process.exit(1)
-// })
