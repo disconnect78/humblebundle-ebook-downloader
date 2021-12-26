@@ -1,23 +1,25 @@
 #!/usr/bin/env node
 
-const commander = require('commander')
 const packageInfo = require('./package.json')
+
+const fs = require('fs')
+const os = require('os')
+const path = require('path')
+const { pipeline } = require('stream/promises')
+const { readFile } = require('fs/promises')
+const util = require('util')
+
+const commander = require('commander')
 const colors = require('colors')
+const Got = require('got')
+const hasha = require('hasha')
 const inquirer = require('inquirer')
 const keypath = require('nasa-keypath')
 const mkdirp = require('mkdirp')
-const sanitizeFilename = require('sanitize-filename')
-const util = require('util')
-const path = require('path')
-const fs = require('fs')
-const { readFile } = require('fs/promises')
-const os = require('os')
 const playwright = require('playwright')
 const PMap = require('p-map')
 const { default: PQueue } = require('p-queue')
-const hasha = require('hasha')
-const Got = require('got')
-const { pipeline } = require('stream/promises')
+const sanitizeFilename = require('sanitize-filename')
 
 const SUPPORTED_FORMATS = ['epub', 'mobi', 'pdf', 'pdf_hd', 'cbz']
 const ALLOWED_FORMATS = SUPPORTED_FORMATS.concat(['all']).sort()
