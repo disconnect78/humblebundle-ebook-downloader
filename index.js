@@ -6,7 +6,7 @@ const fs = require('fs')
 const os = require('os')
 const path = require('path')
 const { pipeline } = require('stream/promises')
-const { readFile } = require('fs/promises')
+const { readFile, writeFile } = require('fs/promises')
 const util = require('util')
 
 const commander = require('commander')
@@ -108,8 +108,8 @@ async function validateSession (config) {
   throw new Error(util.format('Could not validate session, unknown error, status code:', statusCode))
 }
 
-function saveConfig (config, callback) {
-  fs.writeFile(configPath, JSON.stringify(config, null, 4), 'utf8', callback)
+async function saveConfig (config, callback) {
+  await writeFile(configPath, JSON.stringify(config, null, 4))
 }
 
 function debug () {
@@ -137,16 +137,12 @@ async function authenticate () {
 
   await browser.close()
 
-  saveConfig({
+  await saveConfig({
     session: sessionCookie.value,
     expires: new Date(sessionCookie.expires * 1000)
-  }, (error) => {
-    if (error) {
-      throw error
-    }
-
-    return sessionCookie.value
   })
+
+  return sessionCookie.value
 }
 
 async function fetchOrders (session) {
