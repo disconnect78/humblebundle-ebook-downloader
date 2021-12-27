@@ -249,6 +249,8 @@ function getExtension (format) {
   switch (format.toLowerCase()) {
     case 'pdf_hd':
       return ' (hd).pdf'
+    case 'supplement':
+      return '.zip'
     default:
       return util.format('.%s', format)
   }
