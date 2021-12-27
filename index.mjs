@@ -20,7 +20,7 @@ import PMap from 'p-map'
 import PQueue from 'p-queue'
 import sanitizeFilename from 'sanitize-filename'
 
-const SUPPORTED_FORMATS = ['epub', 'mobi', 'pdf', 'pdf_hd', 'cbz']
+const SUPPORTED_FORMATS = ['epub', 'mobi', 'pdf', 'pdf_hd', 'cbz', 'video']
 const ALLOWED_FORMATS = SUPPORTED_FORMATS.concat(['all']).sort()
 
 // Node cannot yet import json in a module, so we need to do this to require our package.json
@@ -32,7 +32,6 @@ commander
   .option('-d, --download-folder <downloader_folder>', 'Download folder', 'download')
   .option('-l, --download-limit <download_limit>', 'Parallel download limit', 1)
   .option('-f, --format <format>', util.format('What format to download the ebook in (%s)', ALLOWED_FORMATS.join(', ')), 'epub')
-  .option('-v, --video', 'Download items marked as video', false)
   .option('--auth-token <auth-token>', 'Optional: If you want to run headless, you can specify your authentication cookie from your browser (_simpleauth_sess)')
   .option('-k, --keys <keys>', 'Comma-separated list of specific purchases to download')
   .option('-a, --all', 'Download all bundles')
@@ -241,9 +240,15 @@ function normalizeFormat (format) {
       return 'pdf_hd'
     case 'download':
       return 'download'
+    case 'supplement':
+      return 'supplement'
     default:
       return format.toLowerCase()
   }
+}
+
+function adjustFormat (format, isVideo) {
+  return isVideo ? `video ${format}` : format
 }
 
 function getExtension (format) {
@@ -251,8 +256,9 @@ function getExtension (format) {
     case 'pdf_hd':
       return ' (hd).pdf'
     case 'supplement':
+      return '.supplement.zip'
     case 'download':
-      return '.zip'
+      return '.download.zip'
     default:
       return util.format('.%s', format)
   }
@@ -282,9 +288,7 @@ async function processBundles (bundles) {
     const bundleFormats = []
 
     for (const subproduct of bundle.subproducts) {
-      const filteredDownloads = subproduct.downloads.filter((download) => {
-        return requiredPlatform(download.platform)
-      })
+      const filteredDownloads = subproduct.downloads.filter(download => requiredPlatform(download.platform))
 
       const downloadStructs = keypath
         .get(filteredDownloads, '[].download_struct')
@@ -295,7 +299,9 @@ async function processBundles (bundles) {
           return false
         }
 
-        const normalizedFormat = normalizeFormat(download.name)
+        // Determine if this is a video so we know if it should be downloaded
+        const isVideo = identifyVideo(download, subproduct)
+        const normalizedFormat = isVideo ? 'video' : normalizeFormat(download.name)
 
         if (bundleFormats.indexOf(normalizedFormat) === -1 && SUPPORTED_FORMATS.indexOf(normalizedFormat) !== -1) {
           bundleFormats.push(normalizedFormat)
@@ -305,10 +311,15 @@ async function processBundles (bundles) {
       })
 
       for (const filteredDownload of filteredDownloadStructs) {
+        const isVideo = identifyVideo(filteredDownload, subproduct)
+        const normalizedFormat = normalizeFormat(filteredDownload.name)
+        const adjustedFormat = adjustFormat(normalizedFormat, isVideo)
+
         bundleDownloads.push({
           bundle: bundleName,
           download: filteredDownload,
-          name: subproduct.human_name
+          name: subproduct.human_name,
+          adjustedFormat
         })
       }
     }
@@ -335,9 +346,27 @@ async function processBundles (bundles) {
 }
 
 function requiredPlatform (platform) {
-  return options.video
-    ? platform === 'ebook' || 'video'
-    : platform === 'ebook'
+  return platform === 'ebook' || 'video'
+}
+
+function identifyVideo (download, subproduct) {
+  if (download.platform === 'video') {
+    return true
+  }
+
+  // We class an item as a video if the format is 'download' or 'supplement', and any part of the subproduct url (split
+  // by /) ends in 'video'. This catches cases where videos are in the eBook section, but have a subproduct url such as
+  // https://www.packtpub.com/product/full-stack-vue-with-graphql-the-ultimate-guide-video/9781838984199
+  const isDownloadOrSupplement = normalizeFormat(download.name) === 'download' || normalizeFormat(download.name) === 'supplement'
+
+  const urlParts = subproduct.url.split('/')
+  const urlIsVideo = urlParts.some(string => string.endsWith('video'))
+
+  if (isDownloadOrSupplement && urlIsVideo) {
+    return true
+  }
+
+  return false
 }
 
 async function downloadEbook (download) {
@@ -362,7 +391,7 @@ async function downloadEbook (download) {
     console.log(
       'Skipped downloading of %s (%s) (%s) - already exists... (%s/%s)',
       download.name,
-      normalizeFormat(download.download.name),
+      download.adjustedFormat,
       download.download.human_size,
       colors.yellow(++doneDownloads),
       colors.yellow(totalDownloads)
@@ -375,7 +404,7 @@ async function doDownload (filePath, download) {
     'Downloading %s - %s (%s) (%s)...',
     download.bundle,
     download.name,
-    normalizeFormat(download.download.name),
+    download.adjustedFormat,
     download.download.human_size
   )
 
@@ -391,7 +420,7 @@ async function doDownload (filePath, download) {
     'Downloaded %s - %s (%s) (%s)... (%s/%s)',
     download.bundle,
     download.name,
-    normalizeFormat(download.download.name),
+    download.adjustedFormat,
     download.download.human_size,
     colors.yellow(++doneDownloads),
     colors.yellow(totalDownloads)
