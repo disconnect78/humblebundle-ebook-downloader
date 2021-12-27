@@ -167,7 +167,6 @@ async function fetchOrders (session) {
   let fetchKeys
 
   if (options.keys) {
-    console.log('🚀 ~ file: index.mjs ~ line 170 ~ fetchOrders ~ options.keys', options.keys)
     const specifiedKeys = options.keys.split(',')
     specifiedKeys.forEach(key => {
       if (!allKeys.includes(key)) {
