@@ -32,7 +32,6 @@ commander
   .option('-d, --download-folder <downloader_folder>', 'Download folder', 'download')
   .option('-l, --download-limit <download_limit>', 'Parallel download limit', 1)
   .option('-f, --format <format>', util.format('What format to download the ebook in (%s)', ALLOWED_FORMATS.join(', ')), 'epub')
-  .option('-v, --video', 'Download items marked as video', false)
   .option('--auth-token <auth-token>', 'Optional: If you want to run headless, you can specify your authentication cookie from your browser (_simpleauth_sess)')
   .option('-k, --keys <keys>', 'Comma-separated list of specific purchases to download')
   .option('-a, --all', 'Download all bundles')
@@ -248,6 +247,10 @@ function normalizeFormat (format) {
   }
 }
 
+function adjustFormat (format, isVideo) {
+  return isVideo ? `video ${format}` : format
+}
+
 function getExtension (format) {
   switch (format.toLowerCase()) {
     case 'pdf_hd':
@@ -296,7 +299,7 @@ async function processBundles (bundles) {
           return false
         }
 
-        // Determine if this is a video so we can exclude it from downloading
+        // Determine if this is a video so we know if it should be downloaded
         const isVideo = identifyVideo(download, subproduct)
         const normalizedFormat = isVideo ? 'video' : normalizeFormat(download.name)
 
@@ -308,14 +311,15 @@ async function processBundles (bundles) {
       })
 
       for (const filteredDownload of filteredDownloadStructs) {
-        // Determine if this is a video so we can correctly state its format later
         const isVideo = identifyVideo(filteredDownload, subproduct)
+        const normalizedFormat = normalizeFormat(filteredDownload.name)
+        const adjustedFormat = adjustFormat(normalizedFormat, isVideo)
 
         bundleDownloads.push({
           bundle: bundleName,
           download: filteredDownload,
           name: subproduct.human_name,
-          isVideo
+          adjustedFormat
         })
       }
     }
@@ -373,7 +377,6 @@ async function downloadEbook (download) {
   await mkdirp(downloadPath)
 
   const name = download.name.trim()
-  // TODO: add something here to correctly name it if it's a video
   const extension = getExtension(normalizeFormat(download.download.name))
   const filename = `${name}${extension}`
 
@@ -385,11 +388,10 @@ async function downloadEbook (download) {
       downloadQueue.add(() => doDownload(filePath, download))
     )
   } else {
-    const normalizedFormat = normalizeFormat(download.download.name)
     console.log(
       'Skipped downloading of %s (%s) (%s) - already exists... (%s/%s)',
       download.name,
-      download.isVideo ? `video ${normalizedFormat}` : normalizedFormat,
+      download.adjustedFormat,
       download.download.human_size,
       colors.yellow(++doneDownloads),
       colors.yellow(totalDownloads)
@@ -398,13 +400,11 @@ async function downloadEbook (download) {
 }
 
 async function doDownload (filePath, download) {
-  const normalizedFormat = normalizeFormat(download.download.name)
-
   console.log(
     'Downloading %s - %s (%s) (%s)...',
     download.bundle,
     download.name,
-    download.isVideo ? `video ${normalizedFormat}` : normalizedFormat,
+    download.adjustedFormat,
     download.download.human_size
   )
 
@@ -420,7 +420,7 @@ async function doDownload (filePath, download) {
     'Downloaded %s - %s (%s) (%s)... (%s/%s)',
     download.bundle,
     download.name,
-    download.isVideo ? `video ${normalizedFormat}` : normalizedFormat,
+    download.adjustedFormat,
     download.download.human_size,
     colors.yellow(++doneDownloads),
     colors.yellow(totalDownloads)
