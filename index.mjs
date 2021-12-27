@@ -1,34 +1,37 @@
 #!/usr/bin/env node
 
-const packageInfo = require('./package.json')
+import { existsSync, createWriteStream } from 'fs'
+import { readFile, writeFile } from 'fs/promises'
+import { createRequire } from 'module'
+import { homedir } from 'os'
+import { resolve } from 'path'
+import { pipeline } from 'stream/promises'
+import { format } from 'util'
 
-const fs = require('fs')
-const os = require('os')
-const path = require('path')
-const { pipeline } = require('stream/promises')
-const { readFile, writeFile } = require('fs/promises')
-const util = require('util')
-
-const commander = require('commander')
-const colors = require('colors')
-const Got = require('got')
-const hasha = require('hasha')
-const inquirer = require('inquirer')
-const keypath = require('nasa-keypath')
-const mkdirp = require('mkdirp')
-const playwright = require('playwright')
-const PMap = require('p-map')
-const { default: PQueue } = require('p-queue')
-const sanitizeFilename = require('sanitize-filename')
+import commander from 'commander'
+import colors from 'colors'
+import got from 'got'
+import hasha from 'hasha'
+import inquirer from 'inquirer'
+import keypath from 'nasa-keypath'
+import mkdirp from 'mkdirp'
+import playwright from 'playwright'
+import PMap from 'p-map'
+import PQueue from 'p-queue'
+import sanitizeFilename from 'sanitize-filename'
 
 const SUPPORTED_FORMATS = ['epub', 'mobi', 'pdf', 'pdf_hd', 'cbz']
 const ALLOWED_FORMATS = SUPPORTED_FORMATS.concat(['all']).sort()
 
+// Node cannot yet import json in a module, so we need to do this to require our package.json
+const require = createRequire(import.meta.url)
+const { version } = require('./package.json')
+
 commander
-  .version(packageInfo.version)
+  .version(version)
   .option('-d, --download-folder <downloader_folder>', 'Download folder', 'download')
   .option('-l, --download-limit <download_limit>', 'Parallel download limit', 1)
-  .option('-f, --format <format>', util.format('What format to download the ebook in (%s)', ALLOWED_FORMATS.join(', ')), 'epub')
+  .option('-f, --format <format>', format('What format to download the ebook in (%s)', ALLOWED_FORMATS.join(', ')), 'epub')
   .option('--auth-token <auth-token>', 'Optional: If you want to run headless, you can specify your authentication cookie from your browser (_simpleauth_sess)')
   .option('-a, --all', 'Download all bundles')
   .option('--debug', 'Enable debug logging', false)
@@ -46,7 +49,7 @@ if (ALLOWED_FORMATS.indexOf(options.format) === -1) {
   commander.help()
 }
 
-const configPath = path.resolve(os.homedir(), '.humblebundle_ebook_downloader.json')
+const configPath = resolve(homedir(), '.humblebundle_ebook_downloader.json')
 
 console.log(colors.green('Starting...'))
 
@@ -65,7 +68,7 @@ async function loadConfig () {
   }
 }
 
-const userAgent = util.format('Humblebundle-Ebook-Downloader/%s', packageInfo.version)
+const userAgent = format('Humblebundle-Ebook-Downloader/%s', version)
 
 const getRequestHeaders = (session) => {
   return {
@@ -90,10 +93,10 @@ async function validateSession (config) {
       return null
     }
   } else {
-    session = util.format('"%s"', commander.authToken.replace(/^"|"$/g, ''))
+    session = format('"%s"', commander.authToken.replace(/^"|"$/g, ''))
   }
 
-  const { statusCode } = await Got.get('https://www.humblebundle.com/api/v1/user/order?ajax=true', {
+  const { statusCode } = await got.get('https://www.humblebundle.com/api/v1/user/order?ajax=true', {
     headers: getRequestHeaders(session)
   })
 
@@ -105,7 +108,7 @@ async function validateSession (config) {
     return null
   }
 
-  throw new Error(util.format('Could not validate session, unknown error, status code:', statusCode))
+  throw new Error(format('Could not validate session, unknown error, status code:', statusCode))
 }
 
 async function saveConfig (config, callback) {
@@ -114,7 +117,7 @@ async function saveConfig (config, callback) {
 
 function debug () {
   if (commander.debug) {
-    console.log(colors.yellow('[DEBUG] ' + util.format.apply(this, arguments)))
+    console.log(colors.yellow('[DEBUG] ' + format.apply(this, arguments)))
   }
 }
 
@@ -148,12 +151,12 @@ async function authenticate () {
 async function fetchOrders (session) {
   console.log('Fetching bundles...')
 
-  const response = await Got.get('https://www.humblebundle.com/api/v1/user/order?ajax=true', {
+  const response = await got.get('https://www.humblebundle.com/api/v1/user/order?ajax=true', {
     headers: getRequestHeaders(session)
   })
 
   if (response.statusCode !== 200) {
-    throw new Error(util.format('Could not fetch orders, unknown error, status code:', response.statusCode))
+    throw new Error(format('Could not fetch orders, unknown error, status code:', response.statusCode))
   }
 
   const allBundles = JSON.parse(response.body)
@@ -163,12 +166,12 @@ async function fetchOrders (session) {
   const orders = []
 
   for (const { gamekey } of allBundles) {
-    const bundle = await Got.get(util.format('https://www.humblebundle.com/api/v1/order/%s?ajax=true', gamekey), {
+    const bundle = await got.get(format('https://www.humblebundle.com/api/v1/order/%s?ajax=true', gamekey), {
       headers: getRequestHeaders(session)
     })
 
     if (bundle.statusCode !== 200) {
-      throw new Error(util.format('Could not fetch orders, unknown error, status code:', bundle.statusCode))
+      throw new Error(format('Could not fetch orders, unknown error, status code:', bundle.statusCode))
     }
 
     done += 1
@@ -230,12 +233,12 @@ function getExtension (format) {
     case 'pdf_hd':
       return ' (hd).pdf'
     default:
-      return util.format('.%s', format)
+      return format('.%s', format)
   }
 }
 
 async function checkSignatureMatch (filePath, download) {
-  if (fs.existsSync(filePath)) {
+  if (existsSync(filePath)) {
     const algorithm = download.sha1 ? 'sha1' : 'md5'
     const hashToVerify = download[algorithm]
     const hash = await hasha.fromFile(filePath, { algorithm })
@@ -311,7 +314,7 @@ async function processBundles (bundles) {
 }
 
 async function downloadEbook (download) {
-  const downloadPath = path.resolve(
+  const downloadPath = resolve(
     options.downloadFolder,
     sanitizeFilename(download.bundle)
   )
@@ -321,7 +324,7 @@ async function downloadEbook (download) {
   const extension = getExtension(normalizeFormat(download.download.name))
   const filename = `${name}${extension}`
 
-  const filePath = path.resolve(downloadPath, sanitizeFilename(filename))
+  const filePath = resolve(downloadPath, sanitizeFilename(filename))
   const fileExists = await checkSignatureMatch(filePath, download.download)
 
   if (!fileExists) {
@@ -350,8 +353,8 @@ async function doDownload (filePath, download) {
   )
 
   await new Promise((resolve, reject) => {
-    const downloadStream = Got.stream(download.download.url.web)
-    const writer = fs.createWriteStream(filePath)
+    const downloadStream = got.stream(download.download.url.web)
+    const writer = createWriteStream(filePath)
     pipeline(downloadStream, writer)
       .then(() => resolve())
       .catch((error) => console.error(`Something went wrong. ${error.message}`))
