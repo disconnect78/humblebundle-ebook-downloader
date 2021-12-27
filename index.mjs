@@ -32,6 +32,7 @@ commander
   .option('-d, --download-folder <downloader_folder>', 'Download folder', 'download')
   .option('-l, --download-limit <download_limit>', 'Parallel download limit', 1)
   .option('-f, --format <format>', util.format('What format to download the ebook in (%s)', ALLOWED_FORMATS.join(', ')), 'epub')
+  .option('-v, --video', 'Download supplements marked as video', false)
   .option('--auth-token <auth-token>', 'Optional: If you want to run headless, you can specify your authentication cookie from your browser (_simpleauth_sess)')
   .option('-k, --keys <keys>', 'Comma-separated list of specific purchases to download')
   .option('-a, --all', 'Download all bundles')
@@ -282,7 +283,7 @@ async function processBundles (bundles) {
 
     for (const subproduct of bundle.subproducts) {
       const filteredDownloads = subproduct.downloads.filter((download) => {
-        return download.platform === 'ebook'
+        return requiredPlatform(download.platform)
       })
 
       const downloadStructs = keypath
@@ -331,6 +332,12 @@ async function processBundles (bundles) {
   totalDownloads = downloads.length
 
   return PMap(downloads, downloadEbook, { concurrency: 5 })
+}
+
+function requiredPlatform (platform) {
+  return options.video
+    ? platform === 'ebook' || 'video'
+    : platform === 'ebook'
 }
 
 async function downloadEbook (download) {
