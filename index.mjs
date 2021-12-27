@@ -20,7 +20,7 @@ import PMap from 'p-map'
 import PQueue from 'p-queue'
 import sanitizeFilename from 'sanitize-filename'
 
-const SUPPORTED_FORMATS = ['epub', 'mobi', 'pdf', 'pdf_hd', 'cbz']
+const SUPPORTED_FORMATS = ['epub', 'mobi', 'pdf', 'pdf_hd', 'cbz', 'video']
 const ALLOWED_FORMATS = SUPPORTED_FORMATS.concat(['all']).sort()
 
 // Node cannot yet import json in a module, so we need to do this to require our package.json
@@ -282,9 +282,7 @@ async function processBundles (bundles) {
     const bundleFormats = []
 
     for (const subproduct of bundle.subproducts) {
-      const filteredDownloads = subproduct.downloads.filter((download) => {
-        return requiredPlatform(download.platform)
-      })
+      const filteredDownloads = subproduct.downloads.filter(download => requiredPlatform(download.platform))
 
       const downloadStructs = keypath
         .get(filteredDownloads, '[].download_struct')
@@ -295,7 +293,9 @@ async function processBundles (bundles) {
           return false
         }
 
-        const normalizedFormat = normalizeFormat(download.name)
+        // Determine if this is a video so we can exclude it from downloading
+        const isVideo = identifyVideo(download, subproduct)
+        const normalizedFormat = isVideo ? 'video' : normalizeFormat(download.name)
 
         if (bundleFormats.indexOf(normalizedFormat) === -1 && SUPPORTED_FORMATS.indexOf(normalizedFormat) !== -1) {
           bundleFormats.push(normalizedFormat)
@@ -305,9 +305,13 @@ async function processBundles (bundles) {
       })
 
       for (const filteredDownload of filteredDownloadStructs) {
+        // Determine if this is a video so we can correctly state its format
+        const isVideo = identifyVideo(filteredDownload, subproduct)
+        const normalizedFormat = isVideo ? 'video' : normalizeFormat(filteredDownload.name)
+
         bundleDownloads.push({
           bundle: bundleName,
-          download: filteredDownload,
+          download: { ...filteredDownload, name: normalizedFormat },
           name: subproduct.human_name
         })
       }
@@ -338,6 +342,22 @@ function requiredPlatform (platform) {
   return options.video
     ? platform === 'ebook' || 'video'
     : platform === 'ebook'
+}
+
+function identifyVideo (download, subproduct) {
+  if (download.platform === 'video') {
+    return true
+  }
+
+  // We class this as a video if the format is 'download' and any part of the subproduct url (split by /) ends in
+  // 'video'. This catches bundles where videos are in the eBook section, but have a subproduct url such as
+  // https://www.packtpub.com/product/full-stack-vue-with-graphql-the-ultimate-guide-video/9781838984199
+  const urlParts = subproduct.url.split('/')
+  if (normalizeFormat(download.name) === 'download' && urlParts.some(string => string.endsWith('video'))) {
+    return true
+  }
+
+  return false
 }
 
 async function downloadEbook (download) {
