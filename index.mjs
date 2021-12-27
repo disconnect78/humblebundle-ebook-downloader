@@ -33,6 +33,7 @@ commander
   .option('-l, --download-limit <download_limit>', 'Parallel download limit', 1)
   .option('-f, --format <format>', util.format('What format to download the ebook in (%s)', ALLOWED_FORMATS.join(', ')), 'epub')
   .option('--auth-token <auth-token>', 'Optional: If you want to run headless, you can specify your authentication cookie from your browser (_simpleauth_sess)')
+  .option('-k, --keys <keys>', 'Comma-separated list of specific purchases to download')
   .option('-a, --all', 'Download all bundles')
   .option('--debug', 'Enable debug logging', false)
   .parse()
@@ -159,13 +160,29 @@ async function fetchOrders (session) {
     throw new Error(util.format('Could not fetch orders, unknown error, status code:', response.statusCode))
   }
 
-  const allBundles = JSON.parse(response.body)
+  const allKeys = JSON
+    .parse(response.body)
+    .map(bundle => bundle.gamekey)
 
-  const total = allBundles.length
+  let fetchKeys
+
+  if (options.keys) {
+    const specifiedKeys = options.keys.split(',')
+    specifiedKeys.forEach(key => {
+      if (!allKeys.includes(key)) {
+        throw new Error(util.format('Invalid key %s', key))
+      }
+    })
+    fetchKeys = specifiedKeys
+  } else {
+    fetchKeys = allKeys
+  }
+
+  const total = fetchKeys.length
   let done = 0
   const orders = []
 
-  for (const { gamekey } of allBundles) {
+  for (const gamekey of fetchKeys) {
     const bundle = await got.get(util.format('https://www.humblebundle.com/api/v1/order/%s?ajax=true', gamekey), {
       headers: getRequestHeaders(session)
     })
