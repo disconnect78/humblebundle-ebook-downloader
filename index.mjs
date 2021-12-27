@@ -6,7 +6,7 @@ import { createRequire } from 'module'
 import { homedir } from 'os'
 import { resolve } from 'path'
 import { pipeline } from 'stream/promises'
-import { format } from 'util'
+import util from 'util'
 
 import commander from 'commander'
 import colors from 'colors'
@@ -31,7 +31,7 @@ commander
   .version(version)
   .option('-d, --download-folder <downloader_folder>', 'Download folder', 'download')
   .option('-l, --download-limit <download_limit>', 'Parallel download limit', 1)
-  .option('-f, --format <format>', format('What format to download the ebook in (%s)', ALLOWED_FORMATS.join(', ')), 'epub')
+  .option('-f, --format <format>', util.format('What format to download the ebook in (%s)', ALLOWED_FORMATS.join(', ')), 'epub')
   .option('--auth-token <auth-token>', 'Optional: If you want to run headless, you can specify your authentication cookie from your browser (_simpleauth_sess)')
   .option('-a, --all', 'Download all bundles')
   .option('--debug', 'Enable debug logging', false)
@@ -68,7 +68,7 @@ async function loadConfig () {
   }
 }
 
-const userAgent = format('Humblebundle-Ebook-Downloader/%s', version)
+const userAgent = util.format('Humblebundle-Ebook-Downloader/%s', version)
 
 const getRequestHeaders = (session) => {
   return {
@@ -93,7 +93,7 @@ async function validateSession (config) {
       return null
     }
   } else {
-    session = format('"%s"', commander.authToken.replace(/^"|"$/g, ''))
+    session = util.format('"%s"', commander.authToken.replace(/^"|"$/g, ''))
   }
 
   const { statusCode } = await got.get('https://www.humblebundle.com/api/v1/user/order?ajax=true', {
@@ -108,7 +108,7 @@ async function validateSession (config) {
     return null
   }
 
-  throw new Error(format('Could not validate session, unknown error, status code:', statusCode))
+  throw new Error(util.format('Could not validate session, unknown error, status code:', statusCode))
 }
 
 async function saveConfig (config, callback) {
@@ -117,7 +117,7 @@ async function saveConfig (config, callback) {
 
 function debug () {
   if (commander.debug) {
-    console.log(colors.yellow('[DEBUG] ' + format.apply(this, arguments)))
+    console.log(colors.yellow('[DEBUG] ' + util.format.apply(this, arguments)))
   }
 }
 
@@ -156,7 +156,7 @@ async function fetchOrders (session) {
   })
 
   if (response.statusCode !== 200) {
-    throw new Error(format('Could not fetch orders, unknown error, status code:', response.statusCode))
+    throw new Error(util.format('Could not fetch orders, unknown error, status code:', response.statusCode))
   }
 
   const allBundles = JSON.parse(response.body)
@@ -166,12 +166,12 @@ async function fetchOrders (session) {
   const orders = []
 
   for (const { gamekey } of allBundles) {
-    const bundle = await got.get(format('https://www.humblebundle.com/api/v1/order/%s?ajax=true', gamekey), {
+    const bundle = await got.get(util.format('https://www.humblebundle.com/api/v1/order/%s?ajax=true', gamekey), {
       headers: getRequestHeaders(session)
     })
 
     if (bundle.statusCode !== 200) {
-      throw new Error(format('Could not fetch orders, unknown error, status code:', bundle.statusCode))
+      throw new Error(util.format('Could not fetch orders, unknown error, status code:', bundle.statusCode))
     }
 
     done += 1
@@ -233,7 +233,7 @@ function getExtension (format) {
     case 'pdf_hd':
       return ' (hd).pdf'
     default:
-      return format('.%s', format)
+      return util.format('.%s', format)
   }
 }
 
