@@ -241,6 +241,8 @@ function normalizeFormat (format) {
       return 'pdf_hd'
     case 'download':
       return 'download'
+    case 'supplement':
+      return 'supplement'
     default:
       return format.toLowerCase()
   }
@@ -251,8 +253,9 @@ function getExtension (format) {
     case 'pdf_hd':
       return ' (hd).pdf'
     case 'supplement':
+      return '.supplement.zip'
     case 'download':
-      return '.zip'
+      return '.download.zip'
     default:
       return util.format('.%s', format)
   }
@@ -305,14 +308,14 @@ async function processBundles (bundles) {
       })
 
       for (const filteredDownload of filteredDownloadStructs) {
-        // Determine if this is a video so we can correctly state its format
+        // Determine if this is a video so we can correctly state its format later
         const isVideo = identifyVideo(filteredDownload, subproduct)
-        const normalizedFormat = isVideo ? 'video' : normalizeFormat(filteredDownload.name)
 
         bundleDownloads.push({
           bundle: bundleName,
-          download: { ...filteredDownload, name: normalizedFormat },
-          name: subproduct.human_name
+          download: filteredDownload,
+          name: subproduct.human_name,
+          isVideo
         })
       }
     }
@@ -339,9 +342,7 @@ async function processBundles (bundles) {
 }
 
 function requiredPlatform (platform) {
-  return options.video
-    ? platform === 'ebook' || 'video'
-    : platform === 'ebook'
+  return platform === 'ebook' || 'video'
 }
 
 function identifyVideo (download, subproduct) {
@@ -349,11 +350,15 @@ function identifyVideo (download, subproduct) {
     return true
   }
 
-  // We class this as a video if the format is 'download' and any part of the subproduct url (split by /) ends in
-  // 'video'. This catches bundles where videos are in the eBook section, but have a subproduct url such as
+  // We class an item as a video if the format is 'download' or 'supplement', and any part of the subproduct url (split
+  // by /) ends in 'video'. This catches cases where videos are in the eBook section, but have a subproduct url such as
   // https://www.packtpub.com/product/full-stack-vue-with-graphql-the-ultimate-guide-video/9781838984199
+  const isDownloadOrSupplement = normalizeFormat(download.name) === 'download' || normalizeFormat(download.name) === 'supplement'
+
   const urlParts = subproduct.url.split('/')
-  if (normalizeFormat(download.name) === 'download' && urlParts.some(string => string.endsWith('video'))) {
+  const urlIsVideo = urlParts.some(string => string.endsWith('video'))
+
+  if (isDownloadOrSupplement && urlIsVideo) {
     return true
   }
 
@@ -368,6 +373,7 @@ async function downloadEbook (download) {
   await mkdirp(downloadPath)
 
   const name = download.name.trim()
+  // TODO: add something here to correctly name it if it's a video
   const extension = getExtension(normalizeFormat(download.download.name))
   const filename = `${name}${extension}`
 
@@ -379,10 +385,11 @@ async function downloadEbook (download) {
       downloadQueue.add(() => doDownload(filePath, download))
     )
   } else {
+    const normalizedFormat = normalizeFormat(download.download.name)
     console.log(
       'Skipped downloading of %s (%s) (%s) - already exists... (%s/%s)',
       download.name,
-      normalizeFormat(download.download.name),
+      download.isVideo ? `video ${normalizedFormat}` : normalizedFormat,
       download.download.human_size,
       colors.yellow(++doneDownloads),
       colors.yellow(totalDownloads)
@@ -391,11 +398,13 @@ async function downloadEbook (download) {
 }
 
 async function doDownload (filePath, download) {
+  const normalizedFormat = normalizeFormat(download.download.name)
+
   console.log(
     'Downloading %s - %s (%s) (%s)...',
     download.bundle,
     download.name,
-    normalizeFormat(download.download.name),
+    download.isVideo ? `video ${normalizedFormat}` : normalizedFormat,
     download.download.human_size
   )
 
@@ -411,7 +420,7 @@ async function doDownload (filePath, download) {
     'Downloaded %s - %s (%s) (%s)... (%s/%s)',
     download.bundle,
     download.name,
-    normalizeFormat(download.download.name),
+    download.isVideo ? `video ${normalizedFormat}` : normalizedFormat,
     download.download.human_size,
     colors.yellow(++doneDownloads),
     colors.yellow(totalDownloads)
