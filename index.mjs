@@ -239,7 +239,7 @@ function normalizeFormat (format) {
     case 'pdf (hd)':
       return 'pdf_hd'
     case 'download':
-      return 'pdf'
+      return 'download'
     default:
       return format.toLowerCase()
   }
@@ -250,6 +250,7 @@ function getExtension (format) {
     case 'pdf_hd':
       return ' (hd).pdf'
     case 'supplement':
+    case 'download':
       return '.zip'
     default:
       return util.format('.%s', format)
