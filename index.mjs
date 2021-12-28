@@ -311,7 +311,7 @@ async function processBundles (bundles) {
           bundleFormats.push(normalizedFormat)
         }
 
-        return options.formats === 'all' || formatsToDownload.includes(normalizedFormat)
+        return formatsToDownload.includes('all') || formatsToDownload.includes(normalizedFormat)
       })
 
       for (const filteredDownload of filteredDownloadStructs) {
@@ -329,7 +329,13 @@ async function processBundles (bundles) {
     }
 
     if (!bundleDownloads.length) {
-      console.log(colors.red('No downloads found matching the right format (%s) for bundle (%s), available formats: (%s)'), options.formats, bundleName, bundleFormats.sort().join(', '))
+      console.log(
+        colors.red('No downloads found matching the right format%s (%s) for bundle (%s), available format%s: (%s)'),
+        pluralise(formatsToDownload),
+        formatsToDownload.join(', '),
+        bundleName,
+        pluralise(bundleFormats),
+        bundleFormats.sort().join(', '))
       continue
     }
 
@@ -339,7 +345,11 @@ async function processBundles (bundles) {
   }
 
   if (!downloads.length) {
-    console.log(colors.red('No downloads found matching the right format (%s), exiting'), options.formats)
+    console.log(
+      colors.red('No downloads found matching the right format%s (%s), exiting'),
+      pluralise(formatsToDownload),
+      formatsToDownload.join(', ')
+    )
   }
 
   console.log(`Downloading ${bundles.length} bundles`)
@@ -347,6 +357,10 @@ async function processBundles (bundles) {
   totalDownloads = downloads.length
 
   return PMap(downloads, downloadEbook, { concurrency: 5 })
+}
+
+function pluralise (array) {
+  return array.length > 1 ? 's' : ''
 }
 
 function requiredPlatform (platform) {
