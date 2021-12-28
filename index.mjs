@@ -20,7 +20,7 @@ import PMap from 'p-map'
 import PQueue from 'p-queue'
 import sanitizeFilename from 'sanitize-filename'
 
-const SUPPORTED_FORMATS = ['epub', 'mobi', 'pdf', 'pdf_hd', 'cbz', 'video']
+const SUPPORTED_FORMATS = ['epub', 'mobi', 'prc', 'pdf', 'pdf_hd', 'cbz', 'video']
 const ALLOWED_FORMATS = SUPPORTED_FORMATS.concat(['all']).sort()
 
 // Node cannot yet import json in a module, so we need to do this to require our package.json
@@ -31,7 +31,7 @@ commander
   .version(version)
   .option('-d, --download-folder <downloader_folder>', 'Download folder', 'download')
   .option('-l, --download-limit <download_limit>', 'Parallel download limit', 1)
-  .option('-f, --format <format>', util.format('What format to download the ebook in (%s)', ALLOWED_FORMATS.join(', ')), 'epub')
+  .option('-f, --formats <formats>', util.format('Comma-separated list of formats to download (%s)', ALLOWED_FORMATS.join(', ')), 'epub')
   .option('--auth-token <auth-token>', 'Optional: If you want to run headless, you can specify your authentication cookie from your browser (_simpleauth_sess)')
   .option('-k, --keys <keys>', 'Comma-separated list of specific purchases to download')
   .option('-a, --all', 'Download all bundles')
@@ -45,10 +45,14 @@ let doneDownloads = 0
 const downloadQueue = new PQueue({ concurrency: options.downloadLimit })
 const downloadPromises = []
 
-if (ALLOWED_FORMATS.indexOf(options.format) === -1) {
-  console.error(colors.red('Invalid format selected.'))
-  commander.help()
-}
+const formatsToDownload = options.formats.split(',')
+
+formatsToDownload.forEach(format => {
+  if (ALLOWED_FORMATS.indexOf(format) === -1) {
+    console.error(colors.red('Invalid format selected.'))
+    commander.help()
+  }
+})
 
 const configPath = resolve(homedir(), '.humblebundle_ebook_downloader.json')
 
@@ -307,7 +311,7 @@ async function processBundles (bundles) {
           bundleFormats.push(normalizedFormat)
         }
 
-        return options.format === 'all' || normalizedFormat === options.format
+        return formatsToDownload.includes('all') || formatsToDownload.includes(normalizedFormat)
       })
 
       for (const filteredDownload of filteredDownloadStructs) {
@@ -325,7 +329,13 @@ async function processBundles (bundles) {
     }
 
     if (!bundleDownloads.length) {
-      console.log(colors.red('No downloads found matching the right format (%s) for bundle (%s), available formats: (%s)'), options.format, bundleName, bundleFormats.sort().join(', '))
+      console.log(
+        colors.red('No downloads found matching the right format%s (%s) for bundle (%s), available format%s: (%s)'),
+        pluralise(formatsToDownload),
+        formatsToDownload.join(', '),
+        bundleName,
+        pluralise(bundleFormats),
+        bundleFormats.sort().join(', '))
       continue
     }
 
@@ -335,7 +345,11 @@ async function processBundles (bundles) {
   }
 
   if (!downloads.length) {
-    console.log(colors.red('No downloads found matching the right format (%s), exiting'), options.format)
+    console.log(
+      colors.red('No downloads found matching the right format%s (%s), exiting'),
+      pluralise(formatsToDownload),
+      formatsToDownload.join(', ')
+    )
   }
 
   console.log(`Downloading ${bundles.length} bundles`)
@@ -343,6 +357,10 @@ async function processBundles (bundles) {
   totalDownloads = downloads.length
 
   return PMap(downloads, downloadEbook, { concurrency: 5 })
+}
+
+function pluralise (array) {
+  return array.length > 1 ? 's' : ''
 }
 
 function requiredPlatform (platform) {
