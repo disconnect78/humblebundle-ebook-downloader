@@ -192,9 +192,16 @@ async function fetchOrders (session) {
   // This is the endpoint used by https://www.humblebundle.com/home/purchases
 
   // We cut the keys array into 40-key chunks as this is the max number of keys we can fetch from the endpoint
-  const chunkedKeys = chunkArray(fetchKeys, 40)
+  const chunkSize = 40
+  const chunkedKeys = chunkArray(fetchKeys, chunkSize)
 
-  for (const chunk of chunkedKeys) {
+  for (const [index, chunk] of chunkedKeys.entries()) {
+    console.log(util.format('Fetching bundle details... (%s-%s/%s)',
+      colors.yellow(index * chunkSize + 1),
+      colors.yellow(Math.min((index + 1) * chunkSize, fetchKeys.length + 1)),
+      colors.yellow(fetchKeys.length + 1)
+    ))
+
     // The endpoint takes keys in the format `gamekeys=...&gamekeys=...&gamekeys=...` so assemble a string of this
     const gamekeysString = chunk
       .map(gamekey => `gamekeys=${gamekey}`)
@@ -218,11 +225,6 @@ async function fetchOrders (session) {
         orders.push(order)
       }
     })
-
-    console.log(util.format('Fetched bundle information chunk... (%s/%s)',
-      colors.yellow(chunkedKeys.indexOf(chunk) + 1),
-      colors.yellow(chunkedKeys.length)
-    ))
   }
 
   // Filter out any orders which don't have an ebook section
@@ -250,7 +252,7 @@ async function displayOrders (orders) {
     .map(order => order.product.human_name)
     .sort((a, b) => a.localeCompare(b))
 
-  // process.stdout.write('\x1Bc') // Clear console
+  process.stdout.write('\x1Bc') // Clear console
 
   const answers = await inquirer.prompt({
     type: 'checkbox',
