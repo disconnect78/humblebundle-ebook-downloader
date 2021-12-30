@@ -37,18 +37,19 @@ $ humblebundle-ebook-downloader --help
     -V, --version                              output the version number
     -d, --download-folder <downloader_folder>  Download folder (default: "download")
     -l, --download-limit <download_limit>      Parallel download limit (default: 1)
-    -f, --format <format>                      What format to download the ebook in (all, cbz, epub, mobi, pdf, pdf_hd)
-                                               (default: "epub")
-    -v, --video                                Download items marked as video (default: false)
-    --auth-token <auth-token>                  Optional: If you want to run headless, you can specify your authentication
-                                               cookie from your browser (_simpleauth_sess)
+    -f, --formats <formats>                    Comma-separated list of formats to download (all, cbz, epub, mobi, pdf, pdf_hd, prc,
+                                               video) (default: "pdf")
+    --auth-token <auth-token>                  Optional: If you want to run headless, you can specify your authentication cookie
+                                               from your browser (_simpleauth_sess)
     -k, --keys <keys>                          Comma-separated list of specific purchases to download
     -a, --all                                  Download all bundles
     --debug                                    Enable debug logging (default: false)
     -h, --help                                 display help for command
 ```
 
-Keys should be specified as a list like `gamekey1,gamekey2,gamekey3`. They can be found by opening a bundle from the [Purchased Products](https://www.humblebundle.com/home/purchases) page; the key will be in the url `https://www.humblebundle.com/downloads?key=gamekey1`.
+Formats and keys should be specified as a list like `gamekey1,gamekey2,gamekey3`.
+
+Keys can be found by opening a bundle from the [Purchased Products](https://www.humblebundle.com/home/purchases) page; the key will be in the url `https://www.humblebundle.com/downloads?key=gamekey1`.
 
 ## Contributors
 - [J. Longman](https://github.com/jlongman)

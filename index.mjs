@@ -31,7 +31,7 @@ commander
   .version(version)
   .option('-d, --download-folder <downloader_folder>', 'Download folder', 'download')
   .option('-l, --download-limit <download_limit>', 'Parallel download limit', 1)
-  .option('-f, --formats <formats>', util.format('Comma-separated list of formats to download (%s)', ALLOWED_FORMATS.join(', ')), 'epub')
+  .option('-f, --formats <formats>', util.format('Comma-separated list of formats to download (%s)', ALLOWED_FORMATS.join(', ')), 'pdf')
   .option('--auth-token <auth-token>', 'Optional: If you want to run headless, you can specify your authentication cookie from your browser (_simpleauth_sess)')
   .option('-k, --keys <keys>', 'Comma-separated list of specific purchases to download')
   .option('-a, --all', 'Download all bundles')
