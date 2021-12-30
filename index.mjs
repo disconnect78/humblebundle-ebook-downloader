@@ -157,18 +157,18 @@ async function authenticate () {
 async function fetchOrders (session) {
   console.log('Fetching bundles...')
 
-  // Grab the list of gamekeys
-  const response = await got.get('https://www.humblebundle.com/api/v1/user/order?ajax=true', {
+  // Fetch the list of gamekeys
+  const keysResponse = await got.get('https://www.humblebundle.com/api/v1/user/order?ajax=true', {
     headers: getRequestHeaders(session)
   })
 
-  if (response.statusCode !== 200) {
-    throw new Error(util.format('Could not fetch orders, unknown error, status code:', response.statusCode))
+  if (keysResponse.statusCode !== 200) {
+    throw new Error(util.format('Could not fetch orders, unknown error, status code:', keysResponse.statusCode))
   }
 
   // Extract all keys into an array
   const allKeys = JSON
-    .parse(response.body)
+    .parse(keysResponse.body)
     .map(bundle => bundle.gamekey)
 
   let fetchKeys
@@ -210,8 +210,14 @@ async function fetchOrders (session) {
       .values(parsedOrders)
       .map(item => item)
 
-    // We now have an array of orders so push them into our main orders array one at a time
-    mappedOrders.forEach(order => orders.push(order))
+    // Handle our array of orders one at a time
+    mappedOrders.forEach(order => {
+      const lowercaseBundleName = order.product.human_name.toLowerCase()
+      // We push the order if no filter was specified, or if the bundle name includes the filter text
+      if (!options.filter || lowercaseBundleName.includes(options.filter.toLowerCase())) {
+        orders.push(order)
+      }
+    })
 
     console.log(util.format('Fetched bundle information chunk... (%s/%s)',
       colors.yellow(chunkedKeys.indexOf(chunk) + 1),
@@ -220,19 +226,17 @@ async function fetchOrders (session) {
   }
 
   // Filter out any orders which don't have an ebook section
-  const formatFilteredOrders = orders.filter((order) => {
+  return orders.filter((order) => {
     return keypath
       .get(order, 'subproducts.[].downloads.[].platform')
       .flat()
       .indexOf('ebook') !== -1
   })
-
-  return formatFilteredOrders
 }
 
-function chunkArray (arr, size) {
-  return Array.from({ length: Math.ceil(arr.length / size) }, (v, i) =>
-    arr.slice(i * size, i * size + size)
+function chunkArray (array, size) {
+  return Array.from({ length: Math.ceil(array.length / size) }, (_element, index) =>
+    array.slice(index * size, index * size + size)
   )
 }
 
