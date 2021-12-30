@@ -488,7 +488,14 @@ async function main () {
     }
 
     const orders = await fetchOrders(session)
-    const bundles = await displayOrders(orders)
+
+    let bundles
+    if (options.all) {
+      bundles = orders
+    } else {
+      bundles = await displayOrders(orders)
+    }
+
     await processBundles(bundles)
     await Promise.all(downloadPromises)
     console.log(colors.green('Done!'))
