@@ -39,6 +39,7 @@ $ humblebundle-ebook-downloader --help
     -l, --download-limit <download_limit>      Parallel download limit (default: 1)
     -f, --formats <formats>                    Comma-separated list of formats to download (all, cbz, epub, mobi, pdf, pdf_hd, prc,
                                                video) (default: "pdf")
+    --filter <filter>                          Only display bundles with this text in the title
     --auth-token <auth-token>                  Optional: If you want to run headless, you can specify your authentication cookie
                                                from your browser (_simpleauth_sess)
     -k, --keys <keys>                          Comma-separated list of specific purchases to download
