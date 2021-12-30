@@ -227,13 +227,15 @@ async function fetchOrders (session) {
     })
   }
 
-  // Filter out any orders which don't have an ebook section
-  return orders.filter((order) => {
-    return keypath
-      .get(order, 'subproducts.[].downloads.[].platform')
-      .flat()
-      .indexOf('ebook') !== -1
-  })
+  // Filter out any orders which don't have an ebook section, sort them by name, and return the resulting array
+  return orders
+    .filter(order => {
+      return keypath
+        .get(order, 'subproducts.[].downloads.[].platform')
+        .flat()
+        .indexOf('ebook') !== -1
+    })
+    .sort((a, b) => a.product.human_name.localeCompare(b.product.human_name))
 }
 
 function chunkArray (array, size) {
@@ -250,7 +252,6 @@ function getWindowHeight () {
 async function displayOrders (orders) {
   const choices = orders
     .map(order => order.product.human_name)
-    .sort((a, b) => a.localeCompare(b))
 
   process.stdout.write('\x1Bc') // Clear console
 
@@ -262,7 +263,7 @@ async function displayOrders (orders) {
     pageSize: getWindowHeight() - 2
   })
 
-  return orders.filter((item) => {
+  return orders.filter(item => {
     return answers.bundle.indexOf(item.product.human_name) !== -1
   })
 }
@@ -330,7 +331,7 @@ async function processBundles (bundles) {
         .get(filteredDownloads, '[].download_struct')
         .flat()
 
-      const filteredDownloadStructs = downloadStructs.filter((download) => {
+      const filteredDownloadStructs = downloadStructs.filter(download => {
         if (!download.name || !download.url) {
           return false
         }
@@ -463,7 +464,7 @@ async function doDownload (filePath, download) {
     const writer = createWriteStream(filePath)
     pipeline(downloadStream, writer)
       .then(() => resolve())
-      .catch((error) => console.error(`Something went wrong. ${error.message}`))
+      .catch(error => console.error(`Something went wrong. ${error.message}`))
   })
 
   console.log(
