@@ -32,6 +32,7 @@ commander
   .option('-d, --download-folder <downloader_folder>', 'Download folder', 'download')
   .option('-l, --download-limit <download_limit>', 'Parallel download limit', 1)
   .option('-f, --formats <formats>', util.format('Comma-separated list of formats to download (%s)', ALLOWED_FORMATS.join(', ')), 'pdf')
+  .option('--filter <filter>', 'Only retrieve bundles with this text in the title')
   .option('--auth-token <auth-token>', 'Optional: If you want to run headless, you can specify your authentication cookie from your browser (_simpleauth_sess)')
   .option('-k, --keys <keys>', 'Comma-separated list of specific purchases to download')
   .option('-a, --all', 'Download all bundles')
@@ -156,6 +157,7 @@ async function authenticate () {
 async function fetchOrders (session) {
   console.log('Fetching bundles...')
 
+  // Grab the list of gamekeys
   const response = await got.get('https://www.humblebundle.com/api/v1/user/order?ajax=true', {
     headers: getRequestHeaders(session)
   })
@@ -164,12 +166,14 @@ async function fetchOrders (session) {
     throw new Error(util.format('Could not fetch orders, unknown error, status code:', response.statusCode))
   }
 
+  // Extract all keys into an array
   const allKeys = JSON
     .parse(response.body)
     .map(bundle => bundle.gamekey)
 
   let fetchKeys
 
+  // If any keys were specified on the command line, filter out any unwanted keys, otherwise we will fetch all keys
   if (options.keys) {
     const specifiedKeys = options.keys.split(',')
     specifiedKeys.forEach(key => {
@@ -182,32 +186,54 @@ async function fetchOrders (session) {
     fetchKeys = allKeys
   }
 
-  const total = fetchKeys.length
-  let done = 0
   const orders = []
 
-  for (const gamekey of fetchKeys) {
-    const bundle = await got.get(util.format('https://www.humblebundle.com/api/v1/order/%s?ajax=true', gamekey), {
+  // We use the https://www.humblebundle.com/api/v1/orders endpoint which allows us to fetch multiple bundles in one go.
+  // This is the endpoint used by https://www.humblebundle.com/home/purchases
+
+  // We cut the keys array into 40-key chunks as this is the max number of keys we can fetch from the endpoint
+  const chunkedKeys = chunkArray(fetchKeys, 40)
+
+  for (const chunk of chunkedKeys) {
+    // The endpoint takes keys in the format `gamekeys=...&gamekeys=...&gamekeys=...` so assemble a string of this
+    const gamekeysString = chunk
+      .map(gamekey => `gamekeys=${gamekey}`)
+      .join('&')
+
+    const chunkResponse = await got.get((util.format('https://www.humblebundle.com/api/v1/orders?%s', gamekeysString)), {
       headers: getRequestHeaders(session)
     })
 
-    if (bundle.statusCode !== 200) {
-      throw new Error(util.format('Could not fetch orders, unknown error, status code:', bundle.statusCode))
-    }
+    // The endpoint returns an object where each value is an order, so we map these values to an array
+    const parsedOrders = JSON.parse(chunkResponse.body)
+    const mappedOrders = Object
+      .values(parsedOrders)
+      .map(item => item)
 
-    done += 1
-    console.log('Fetched bundle information... (%s/%s)', colors.yellow(done), colors.yellow(total))
-    orders.push(JSON.parse(bundle.body))
+    // We now have an array of orders so push them into our main orders array one at a time
+    mappedOrders.forEach(order => orders.push(order))
+
+    console.log(util.format('Fetched bundle information chunk... (%s/%s)',
+      colors.yellow(chunkedKeys.indexOf(chunk) + 1),
+      colors.yellow(chunkedKeys.length)
+    ))
   }
 
-  const filteredOrders = orders.filter((order) => {
+  // Filter out any orders which don't have an ebook section
+  const formatFilteredOrders = orders.filter((order) => {
     return keypath
       .get(order, 'subproducts.[].downloads.[].platform')
       .flat()
       .indexOf('ebook') !== -1
   })
 
-  return filteredOrders
+  return formatFilteredOrders
+}
+
+function chunkArray (arr, size) {
+  return Array.from({ length: Math.ceil(arr.length / size) }, (v, i) =>
+    arr.slice(i * size, i * size + size)
+  )
 }
 
 function getWindowHeight () {
@@ -220,7 +246,7 @@ async function displayOrders (orders) {
     .map(order => order.product.human_name)
     .sort((a, b) => a.localeCompare(b))
 
-  process.stdout.write('\x1Bc') // Clear console
+  // process.stdout.write('\x1Bc') // Clear console
 
   const answers = await inquirer.prompt({
     type: 'checkbox',
