@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { existsSync, createWriteStream } from 'fs'
-import { readFile, writeFile } from 'fs/promises'
+import { mkdir, readFile, writeFile } from 'fs/promises'
 import { createRequire } from 'module'
 import { homedir } from 'os'
 import { resolve } from 'path'
@@ -14,7 +14,6 @@ import got from 'got'
 import hasha from 'hasha'
 import inquirer from 'inquirer'
 import keypath from 'nasa-keypath'
-import mkdirp from 'mkdirp'
 import playwright from 'playwright'
 import PMap from 'p-map'
 import PQueue from 'p-queue'
@@ -425,7 +424,7 @@ async function downloadEbook (download) {
     options.downloadFolder,
     sanitizeFilename(download.bundle)
   )
-  await mkdirp(downloadPath)
+  await mkdir(downloadPath, { recursive: true })
 
   const name = download.name.trim()
   const extension = getExtension(normalizeFormat(download.download.name))
