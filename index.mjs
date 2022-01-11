@@ -8,8 +8,8 @@ import { resolve } from 'path'
 import { pipeline } from 'stream/promises'
 import util from 'util'
 
+import chalk from 'chalk'
 import commander from 'commander'
-import colors from 'colors'
 import got from 'got'
 import hasha from 'hasha'
 import inquirer from 'inquirer'
@@ -49,14 +49,14 @@ const formatsToDownload = options.formats.split(',')
 
 formatsToDownload.forEach(format => {
   if (ALLOWED_FORMATS.indexOf(format) === -1) {
-    console.error(colors.red('Invalid format selected.'))
+    console.error(chalk.red('Invalid format selected.'))
     commander.help()
   }
 })
 
 const configPath = resolve(homedir(), '.humblebundle_ebook_downloader.json')
 
-console.log(colors.green('Starting...'))
+console.log(chalk.green('Starting...'))
 
 main()
 
@@ -122,7 +122,7 @@ async function saveConfig (config, callback) {
 
 function debug () {
   if (commander.debug) {
-    console.log(colors.yellow('[DEBUG] ' + util.format.apply(this, arguments)))
+    console.log(chalk.yellow('[DEBUG] ' + util.format.apply(this, arguments)))
   }
 }
 
@@ -196,9 +196,9 @@ async function fetchOrders (session) {
 
   for (const [index, chunk] of chunkedKeys.entries()) {
     console.log(util.format('Fetching bundle details... (%s-%s/%s)',
-      colors.yellow(index * chunkSize + 1),
-      colors.yellow(Math.min((index + 1) * chunkSize, fetchKeys.length + 1)),
-      colors.yellow(fetchKeys.length + 1)
+      chalk.yellow(index * chunkSize + 1),
+      chalk.yellow(Math.min((index + 1) * chunkSize, fetchKeys.length + 1)),
+      chalk.yellow(fetchKeys.length + 1)
     ))
 
     // The endpoint takes keys in the format `gamekeys=...&gamekeys=...&gamekeys=...` so assemble a string of this
@@ -312,7 +312,7 @@ async function checkSignatureMatch (filePath, download) {
 
 async function processBundles (bundles) {
   if (!bundles.length) {
-    console.log(colors.green('No bundles selected, exiting'))
+    console.log(chalk.green('No bundles selected, exiting'))
     return
   }
 
@@ -362,7 +362,7 @@ async function processBundles (bundles) {
 
     if (!bundleDownloads.length) {
       console.log(
-        colors.red('No downloads found matching the right format%s (%s) for bundle (%s), available format%s: (%s)'),
+        chalk.red('No downloads found matching the right format%s (%s) for bundle (%s), available format%s: (%s)'),
         pluralise(formatsToDownload),
         formatsToDownload.join(', '),
         bundleName,
@@ -378,7 +378,7 @@ async function processBundles (bundles) {
 
   if (!downloads.length) {
     console.log(
-      colors.red('No downloads found matching the right format%s (%s), exiting'),
+      chalk.red('No downloads found matching the right format%s (%s), exiting'),
       pluralise(formatsToDownload),
       formatsToDownload.join(', ')
     )
@@ -443,8 +443,8 @@ async function downloadEbook (download) {
       download.name,
       download.adjustedFormat,
       download.download.human_size,
-      colors.yellow(++doneDownloads),
-      colors.yellow(totalDownloads)
+      chalk.yellow(++doneDownloads),
+      chalk.yellow(totalDownloads)
     )
   }
 }
@@ -472,8 +472,8 @@ async function doDownload (filePath, download) {
     download.name,
     download.adjustedFormat,
     download.download.human_size,
-    colors.yellow(++doneDownloads),
-    colors.yellow(totalDownloads)
+    chalk.yellow(++doneDownloads),
+    chalk.yellow(totalDownloads)
   )
 }
 
@@ -495,10 +495,10 @@ async function main () {
 
     await processBundles(bundles)
     await Promise.all(downloadPromises)
-    console.log(colors.green('Done!'))
+    console.log(chalk.green('Done!'))
     process.exit(1)
   } catch (error) {
-    console.error(colors.red('An error occured, exiting.'))
+    console.error(chalk.red('An error occured, exiting.'))
     console.error(error)
     process.exit(1)
   }
