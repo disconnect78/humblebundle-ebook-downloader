@@ -102,7 +102,8 @@ async function validateSession (config) {
   }
 
   const { statusCode } = await got.get('https://www.humblebundle.com/api/v1/user/order?ajax=true', {
-    headers: getRequestHeaders(session)
+    headers: getRequestHeaders(session),
+    throwHttpErrors: false
   })
 
   if (statusCode === 200) {
