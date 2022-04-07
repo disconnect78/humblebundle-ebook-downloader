@@ -159,7 +159,8 @@ async function fetchOrders (session) {
 
   // Fetch the list of gamekeys
   const keysResponse = await got.get('https://www.humblebundle.com/api/v1/user/order?ajax=true', {
-    headers: getRequestHeaders(session)
+    headers: getRequestHeaders(session),
+    throwHttpErrors: false
   })
 
   if (keysResponse.statusCode !== 200) {
