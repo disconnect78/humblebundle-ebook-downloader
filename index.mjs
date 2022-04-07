@@ -159,7 +159,8 @@ async function fetchOrders (session) {
 
   // Fetch the list of gamekeys
   const keysResponse = await got.get('https://www.humblebundle.com/api/v1/user/order?ajax=true', {
-    headers: getRequestHeaders(session)
+    headers: getRequestHeaders(session),
+    throwHttpErrors: false
   })
 
   if (keysResponse.statusCode !== 200) {
@@ -198,8 +199,8 @@ async function fetchOrders (session) {
   for (const [index, chunk] of chunkedKeys.entries()) {
     console.log(util.format('Fetching bundle details... (%s-%s/%s)',
       chalk.yellow(index * chunkSize + 1),
-      chalk.yellow(Math.min((index + 1) * chunkSize, fetchKeys.length + 1)),
-      chalk.yellow(fetchKeys.length + 1)
+      chalk.yellow(Math.min((index + 1) * chunkSize, fetchKeys.length)),
+      chalk.yellow(fetchKeys.length)
     ))
 
     // The endpoint takes keys in the format `gamekeys=...&gamekeys=...&gamekeys=...` so assemble a string of this
