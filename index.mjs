@@ -199,8 +199,8 @@ async function fetchOrders (session) {
   for (const [index, chunk] of chunkedKeys.entries()) {
     console.log(util.format('Fetching bundle details... (%s-%s/%s)',
       chalk.yellow(index * chunkSize + 1),
-      chalk.yellow(Math.min((index + 1) * chunkSize, fetchKeys.length + 1)),
-      chalk.yellow(fetchKeys.length + 1)
+      chalk.yellow(Math.min((index + 1) * chunkSize, fetchKeys.length)),
+      chalk.yellow(fetchKeys.length)
     ))
 
     // The endpoint takes keys in the format `gamekeys=...&gamekeys=...&gamekeys=...` so assemble a string of this
