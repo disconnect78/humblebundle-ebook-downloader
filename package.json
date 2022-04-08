@@ -2,9 +2,9 @@
   "name": "humblebundle-ebook-downloader",
   "version": "1.0.18",
   "license": "Unlicense",
-  "main": "index.mjs",
+  "main": "index.js",
   "bin": {
-    "humblebundle-ebook-downloader": "index.mjs"
+    "humblebundle-ebook-downloader": "index.js"
   },
   "scripts": {
     "test": "standard"
@@ -28,5 +28,6 @@
   },
   "devDependencies": {
     "standard": "^16.0.4"
-  }
+  },
+  "type": "module"
 }

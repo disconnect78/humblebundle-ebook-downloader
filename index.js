@@ -34,6 +34,7 @@ commander
   .option('--filter <filter>', 'Only display bundles with this text in the title')
   .option('--auth-token <auth-token>', 'Optional: If you want to run headless, you can specify your authentication cookie from your browser (_simpleauth_sess)')
   .option('-k, --keys <keys>', 'Comma-separated list of specific purchases to download')
+  .option('-s, --sort <sort>', 'Order to sort bundles in menu (name, date)', 'name')
   .option('-a, --all', 'Download all bundles')
   .option('--debug', 'Enable debug logging', false)
   .parse()
@@ -236,7 +237,18 @@ async function fetchOrders (session) {
         .flat()
         .indexOf('ebook') !== -1
     })
-    .sort((a, b) => a.product.human_name.localeCompare(b.product.human_name))
+    .sort((a, b) => sortBundles(a, b, options.sort))
+}
+
+function sortBundles (a, b, sortOrder) {
+  switch (sortOrder) {
+    case 'name':
+      return a.product.human_name.localeCompare(b.product.human_name)
+    case 'date':
+      // We use the created date, which is stored as a string so we can use localeCompare()
+      // We compare b with a to so that we sort in reverse order (ie. latest bundle first)
+      return b.created.localeCompare(a.created)
+  }
 }
 
 function chunkArray (array, size) {
