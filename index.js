@@ -236,7 +236,6 @@ async function fetchOrders (session) {
         .flat()
         .indexOf('ebook') !== -1
     })
-    .sort((a, b) => a.product.human_name.localeCompare(b.product.human_name))
 }
 
 function chunkArray (array, size) {
