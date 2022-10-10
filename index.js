@@ -155,9 +155,7 @@ async function authenticate () {
   return sessionCookie.value
 }
 
-async function fetchOrders (session) {
-  console.log('Fetching bundles...')
-
+async function fetchAndFilterKeys (session) {
   // Fetch the list of gamekeys
   const keysResponse = await got.get('https://www.humblebundle.com/api/v1/user/order?ajax=true', {
     headers: getRequestHeaders(session),
@@ -168,40 +166,45 @@ async function fetchOrders (session) {
     throw new Error(util.format('Could not fetch orders, unknown error, status code:', keysResponse.statusCode))
   }
 
-  // Extract all keys into an array
-  const allKeys = JSON
+  // Extract and return all keys into an array
+  return JSON
     .parse(keysResponse.body)
     .map(bundle => bundle.gamekey)
+}
 
-  let fetchKeys
-
-  // If any keys were specified on the command line, filter out any unwanted keys, otherwise we will fetch all keys
-  if (options.keys) {
-    const specifiedKeys = options.keys.split(',')
-    specifiedKeys.forEach(key => {
-      if (!allKeys.includes(key)) {
-        throw new Error(util.format('Invalid key %s', key))
-      }
-    })
-    fetchKeys = specifiedKeys
-  } else {
-    fetchKeys = allKeys
+function filterKeys (keys) {
+  // If no keys to filter by were specified on the command line then just return all keys
+  if (!options.keys) {
+    return keys
   }
 
-  const orders = []
+  const specifiedKeys = options.keys.split(',')
+
+  // Check that each specified key is in the full array of keys, and throw an error if not
+  specifiedKeys.forEach(key => {
+    if (!keys.includes(key)) {
+      throw new Error(util.format('Invalid key %s', key))
+    }
+  })
+
+  return specifiedKeys
+}
+
+async function fetchAndFilterOrders (keys, session) {
+  const fetchedOrders = []
 
   // We use the https://www.humblebundle.com/api/v1/orders endpoint which allows us to fetch multiple bundles in one go.
   // This is the endpoint used by https://www.humblebundle.com/home/purchases
 
   // We cut the keys array into 40-key chunks as this is the max number of keys we can fetch from the endpoint
   const chunkSize = 40
-  const chunkedKeys = chunkArray(fetchKeys, chunkSize)
+  const chunkedKeys = chunkArray(keys, chunkSize)
 
   for (const [index, chunk] of chunkedKeys.entries()) {
     console.log(util.format('Fetching bundle details... (%s-%s/%s)',
       chalk.yellow(index * chunkSize + 1),
-      chalk.yellow(Math.min((index + 1) * chunkSize, fetchKeys.length)),
-      chalk.yellow(fetchKeys.length)
+      chalk.yellow(Math.min((index + 1) * chunkSize, keys.length)),
+      chalk.yellow(keys.length)
     ))
 
     // The endpoint takes keys in the format `gamekeys=...&gamekeys=...&gamekeys=...` so assemble a string of this
@@ -213,30 +216,34 @@ async function fetchOrders (session) {
       headers: getRequestHeaders(session)
     })
 
-    // The endpoint returns an object where each value is an order, so we map these values to an array
+    // The endpoint returns an object where each value is an order, so we pull these values into an array
     const parsedOrders = JSON.parse(chunkResponse.body)
-    const mappedOrders = Object
-      .values(parsedOrders)
-      .map(item => item)
+    const ordersArray = Object.values(parsedOrders)
 
-    // Handle our array of orders one at a time
-    mappedOrders.forEach(order => {
-      const lowercaseBundleName = order.product.human_name.toLowerCase()
-      // We push the order if no filter was specified, or if the bundle name includes the filter text
-      if (!options.filter || lowercaseBundleName.includes(options.filter.toLowerCase())) {
-        orders.push(order)
-      }
-    })
+    // Use the spread operator push the contents of ordersArray into ordersToReturn individually
+    fetchedOrders.push(...ordersArray)
   }
 
-  // Filter out any orders which don't have an ebook section, sort them by name, and return the resulting array
+  return fetchedOrders
+}
+
+function filterOrders (orders) {
   return orders
+    // If a filter option was specified than filter out any orders which don't have that text in its name
+    .filter(order => {
+      const lowercaseBundleName = order.product.human_name.toLowerCase()
+      return (
+        !options.filter || lowercaseBundleName.includes(options.filter.toLowerCase())
+      )
+    })
+    // Filter out any orders which don't have an ebook section
     .filter(order => {
       return keypath
         .get(order, 'subproducts.[].downloads.[].platform')
         .flat()
         .indexOf('ebook') !== -1
     })
+    // Sort the bundle by the specified option
     .sort((a, b) => sortBundles(a, b, options.sort))
 }
 
@@ -501,11 +508,16 @@ async function main () {
       session = await authenticate()
     }
 
-    const orders = await fetchOrders(session)
+    console.log('Fetching bundles...')
+    const fetchedKeys = await fetchAndFilterKeys(session)
+    const filteredKeys = filterKeys(fetchedKeys)
+
+    const fetchedOrders = await fetchAndFilterOrders(filteredKeys, session)
+    const filteredOrders = filterOrders(fetchedOrders)
 
     const bundles = options.all
-      ? orders
-      : await displayOrders(orders)
+      ? filteredOrders
+      : await displayOrders(filteredOrders)
 
     await processBundles(bundles)
     await Promise.all(downloadPromises)
